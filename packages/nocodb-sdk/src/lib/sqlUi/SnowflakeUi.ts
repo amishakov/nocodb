@@ -1,5 +1,6 @@
 import UITypes from '../UITypes';
 import { IDType } from './index';
+import { ColumnType } from '~/lib';
 
 const dbTypes = [
   'NUMBER',
@@ -67,9 +68,9 @@ export class SnowflakeUi {
       {
         column_name: 'title',
         title: 'Title',
-        dt: 'varchar',
+        dt: 'TEXT',
         dtx: 'specificType',
-        ct: 'varchar(45)',
+        ct: null,
         nrqd: true,
         rqd: false,
         ck: false,
@@ -77,10 +78,10 @@ export class SnowflakeUi {
         un: false,
         ai: false,
         cdf: null,
-        clen: 45,
+        clen: null,
         np: null,
         ns: null,
-        dtxp: '45',
+        dtxp: '',
         dtxs: '',
         altered: 1,
         uidt: 'SingleLineText',
@@ -92,28 +93,51 @@ export class SnowflakeUi {
         title: 'CreatedAt',
         dt: 'timestamp',
         dtx: 'specificType',
-        ct: 'varchar(45)',
+        ct: 'timestamp',
         nrqd: true,
         rqd: false,
         ck: false,
         pk: false,
         un: false,
         ai: false,
-        cdf: 'current_timestamp()',
         clen: 45,
         np: null,
         ns: null,
         dtxp: '',
         dtxs: '',
         altered: 1,
-        uidt: UITypes.DateTime,
+        uidt: UITypes.CreatedTime,
         uip: '',
         uicn: '',
+        system: true,
       },
       {
         column_name: 'updated_at',
         title: 'UpdatedAt',
         dt: 'timestamp',
+        dtx: 'specificType',
+        ct: 'timestamp',
+        nrqd: true,
+        rqd: false,
+        ck: false,
+        pk: false,
+        un: false,
+        ai: false,
+        clen: 45,
+        np: null,
+        ns: null,
+        dtxp: '',
+        dtxs: '',
+        altered: 1,
+        uidt: UITypes.LastModifiedTime,
+        uip: '',
+        uicn: '',
+        system: true,
+      },
+      {
+        column_name: 'created_by',
+        title: 'nc_created_by',
+        dt: 'varchar',
         dtx: 'specificType',
         ct: 'varchar(45)',
         nrqd: true,
@@ -122,17 +146,63 @@ export class SnowflakeUi {
         pk: false,
         un: false,
         ai: false,
-        au: true,
-        cdf: 'current_timestamp()',
         clen: 45,
         np: null,
         ns: null,
-        dtxp: '',
+        dtxp: '45',
         dtxs: '',
         altered: 1,
-        uidt: UITypes.DateTime,
+        uidt: UITypes.CreatedBy,
         uip: '',
         uicn: '',
+        system: true,
+      },
+      {
+        column_name: 'updated_by',
+        title: 'nc_updated_by',
+        dt: 'varchar',
+        dtx: 'specificType',
+        ct: 'varchar(45)',
+        nrqd: true,
+        rqd: false,
+        ck: false,
+        pk: false,
+        un: false,
+        ai: false,
+        clen: 45,
+        np: null,
+        ns: null,
+        dtxp: '45',
+        dtxs: '',
+        altered: 1,
+        uidt: UITypes.LastModifiedBy,
+        uip: '',
+        uicn: '',
+        system: true,
+      },
+      {
+        column_name: 'nc_order',
+        title: 'nc_order',
+        dt: 'number',
+        dtx: 'specificType',
+        ct: 'number(38,18)',
+        nrqd: true,
+        rqd: false,
+        ck: false,
+        pk: false,
+        un: false,
+        ai: false,
+        cdf: null,
+        clen: null,
+        np: 38,
+        ns: 18,
+        dtxp: '38,18',
+        dtxs: '',
+        altered: 1,
+        uidt: UITypes.Order,
+        uip: '',
+        uicn: '',
+        system: true,
       },
     ];
   }
@@ -140,9 +210,9 @@ export class SnowflakeUi {
   static getNewColumn(suffix) {
     return {
       column_name: 'title' + suffix,
-      dt: 'varchar',
+      dt: 'TEXT',
       dtx: 'specificType',
-      ct: 'varchar(45)',
+      ct: null,
       nrqd: true,
       rqd: false,
       ck: false,
@@ -150,10 +220,10 @@ export class SnowflakeUi {
       un: false,
       ai: false,
       cdf: null,
-      clen: 45,
+      clen: null,
       np: null,
       ns: null,
-      dtxp: '45',
+      dtxp: '',
       dtxs: '',
       altered: 1,
       uidt: 'SingleLineText',
@@ -598,6 +668,7 @@ export class SnowflakeUi {
       case 'STRING':
         return 'string';
       case 'TEXT':
+        if (col.dtxp < 1024) return 'string';
         return 'text';
       case 'BINARY':
       case 'VARBINARY':
@@ -680,7 +751,7 @@ export class SnowflakeUi {
         colProp.dt = 'VARCHAR';
         break;
       case 'SingleLineText':
-        colProp.dt = 'VARCHAR';
+        colProp.dt = 'TEXT';
         break;
       case 'LongText':
         colProp.dt = 'TEXT';
@@ -730,7 +801,7 @@ export class SnowflakeUi {
         };
         break;
       case 'URL':
-        colProp.dt = 'VARCHAR';
+        colProp.dt = 'TEXT';
         colProp.validate = {
           func: ['isURL'],
           args: [''],
@@ -776,7 +847,7 @@ export class SnowflakeUi {
       case 'DateTime':
         colProp.dt = 'TIMESTAMP';
         break;
-      case 'CreateTime':
+      case 'CreatedTime':
         colProp.dt = 'TIMESTAMP';
         break;
       case 'LastModifiedTime':
@@ -818,10 +889,10 @@ export class SnowflakeUi {
       case 'LongText':
       case 'Collaborator':
       case 'GeoData':
-        return ['CHAR', 'CHARACTER', 'VARCHAR', 'TEXT'];
+        return ['TEXT', 'VARCHAR', 'CHARACTER', 'CHAR'];
 
       case 'Attachment':
-        return ['TEXT', 'CHAR', 'CHARACTER', 'VARCHAR', 'text'];
+        return ['TEXT', 'CHAR', 'CHARACTER', 'VARCHAR'];
 
       case 'JSON':
         return ['TEXT'];
@@ -845,7 +916,7 @@ export class SnowflakeUi {
         return ['VARCHAR'];
 
       case 'URL':
-        return ['VARCHAR', 'TEXT'];
+        return ['TEXT', 'VARCHAR'];
 
       case 'Number':
         return [
@@ -937,6 +1008,7 @@ export class SnowflakeUi {
         ];
 
       case 'Formula':
+      case 'Button':
         return ['TEXT', 'VARCHAR'];
 
       case 'Rollup':
@@ -952,9 +1024,14 @@ export class SnowflakeUi {
         return ['DATE', 'TIMESTAMP'];
 
       case 'DateTime':
-      case 'CreateTime':
+      case 'CreatedTime':
       case 'LastModifiedTime':
         return ['TIMESTAMP'];
+
+      case 'User':
+      case 'CreatedBy':
+      case 'LastModifiedBy':
+        return ['VARCHAR'];
 
       case 'AutoNumber':
         return ['NUMBER', 'INT', 'INTEGER', 'BIGINT'];
@@ -965,7 +1042,6 @@ export class SnowflakeUi {
       case 'Geometry':
         return ['TEXT'];
 
-      case 'Button':
       default:
         return dbTypes;
     }
@@ -982,6 +1058,26 @@ export class SnowflakeUi {
       'COUNT',
       'DATESTR',
     ];
+  }
+
+  static getCurrentDateDefault(_col: Partial<ColumnType>) {
+    return null;
+  }
+
+  static isEqual(dataType1: string, dataType2: string) {
+    if (dataType1 === dataType2) return true;
+
+    const abstractType1 = this.getAbstractType({ dt: dataType1 });
+    const abstractType2 = this.getAbstractType({ dt: dataType2 });
+
+    if (
+      abstractType1 &&
+      abstractType1 === abstractType2 &&
+      ['integer', 'float'].includes(abstractType1)
+    )
+      return true;
+
+    return false;
   }
 }
 

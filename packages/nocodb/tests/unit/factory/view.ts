@@ -9,12 +9,22 @@ const createView = async (
     title,
     table,
     type,
+    range,
   }: {
     title: string;
     table: Model;
     type: ViewTypes;
+    range?: {
+      fk_from_column_id?: string;
+      fk_to_column_id?: string;
+    };
   },
 ) => {
+  const ctx = {
+    workspace_id: table.fk_workspace_id,
+    base_id: table.base_id,
+  };
+
   const viewTypeStr = (type) => {
     switch (type) {
       case ViewTypes.GALLERY:
@@ -25,6 +35,8 @@ const createView = async (
         return 'grids';
       case ViewTypes.KANBAN:
         return 'kanbans';
+      case ViewTypes.CALENDAR:
+        return 'calendars';
       default:
         throw new Error('Invalid view type');
     }
@@ -36,22 +48,27 @@ const createView = async (
     .send({
       title,
       type,
+      ...(range?.fk_from_column_id ? { calendar_range: [range] } : {}),
     });
   if (response.status !== 200) {
     throw new Error('createView', response.body.message);
   }
 
-  const view = (await View.getByTitleOrId({
+  return (await View.getByTitleOrId(ctx, {
     fk_model_id: table.id,
     titleOrId: title,
   })) as View;
-  return view;
 };
 
 const getView = async (
   context,
   { table, name }: { table: Model; name: string },
 ) => {
+  const ctx = {
+    workspace_id: table.fk_workspace_id,
+    base_id: table.base_id,
+  };
+
   const response = await request(context.app)
     .get(`/api/v1/db/meta/tables/${table.id}/views`)
     .set('xc-auth', context.token);
@@ -59,7 +76,7 @@ const getView = async (
     throw new Error('List Views', response.body.message);
   }
   const _view = response.body.list.find((v) => v.title === name);
-  const view = View.getByTitleOrId({
+  const view = View.getByTitleOrId(ctx, {
     titleOrId: _view.id,
     fk_model_id: _view.fk_model_id,
   });
@@ -82,6 +99,11 @@ const updateView = async (
     field?: any[];
   },
 ) => {
+  const ctx = {
+    workspace_id: table.fk_workspace_id,
+    base_id: table.base_id,
+  };
+
   if (filter.length) {
     for (let i = 0; i < filter.length; i++) {
       await request(context.app)
@@ -104,8 +126,8 @@ const updateView = async (
 
   if (field.length) {
     for (let i = 0; i < field.length; i++) {
-      const columns = await table.getColumns();
-      const viewColumns = await view.getColumns();
+      const columns = await table.getColumns(ctx);
+      const viewColumns = await view.getColumns(ctx);
 
       const columnId = columns.find((c) => c.title === field[i]).id;
       const viewColumnId = viewColumns.find(

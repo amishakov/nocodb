@@ -1,4 +1,11 @@
-import { extractRolesObj, type UserType } from 'nocodb-sdk';
+import {
+  extractRolesObj,
+  IconType,
+  ncIsObject,
+  type UserType,
+} from 'nocodb-sdk';
+import type { MetaType } from 'nocodb-sdk';
+import type { NcContext } from '~/interface/config';
 import { NcError } from '~/helpers/catchError';
 import Noco from '~/Noco';
 import { extractProps } from '~/helpers/extractProps';
@@ -8,9 +15,11 @@ import {
   CacheGetType,
   CacheScope,
   MetaTable,
+  RootScopes,
 } from '~/utils/globals';
-import { Base, BaseUser } from '~/models';
+import { Base, BaseUser, PresignedUrl, UserRefreshToken } from '~/models';
 import { sanitiseUserObj } from '~/utils';
+import { parseMetaProp, prepareForDb } from '~/utils/modelUtils';
 
 export default class User implements UserType {
   id: string;
@@ -20,7 +29,6 @@ export default class User implements UserType {
 
   password?: string;
   salt?: string;
-  refresh_token?: string;
   invite_token?: string;
   invite_token_expires?: number | Date;
   reset_password_expires?: number | Date;
@@ -32,6 +40,13 @@ export default class User implements UserType {
 
   display_name?: string;
   avatar?: string;
+
+  blocked?: boolean;
+  blocked_reason?: string;
+
+  deleted_at?: Date;
+  is_deleted?: boolean;
+  meta?: MetaType;
 
   constructor(data: User) {
     Object.assign(this, data);
@@ -47,7 +62,6 @@ export default class User implements UserType {
       'email',
       'password',
       'salt',
-      'refresh_token',
       'invite_token',
       'invite_token_expires',
       'reset_password_expires',
@@ -56,6 +70,7 @@ export default class User implements UserType {
       'email_verified',
       'roles',
       'token_version',
+      'meta',
     ]);
 
     if (insertObj.email) {
@@ -63,19 +78,18 @@ export default class User implements UserType {
     }
 
     const { id } = await ncMeta.metaInsert2(
-      null,
-      null,
+      RootScopes.ROOT,
+      RootScopes.ROOT,
       MetaTable.USERS,
-      insertObj,
+      prepareForDb(insertObj),
     );
 
     await NocoCache.del(CacheScope.INSTANCE_META);
 
     // clear all base user related cache for instance
-    const bases = await Base.list({}, ncMeta);
+    const bases = await Base.list(null, ncMeta);
     for (const base of bases) {
       await NocoCache.deepDel(
-        CacheScope.BASE_USER,
         `${CacheScope.BASE_USER}:${base.id}:list`,
         CacheDelDirection.PARENT_TO_CHILD,
       );
@@ -89,7 +103,6 @@ export default class User implements UserType {
       'email',
       'password',
       'salt',
-      'refresh_token',
       'invite_token',
       'invite_token_expires',
       'reset_password_expires',
@@ -100,6 +113,7 @@ export default class User implements UserType {
       'token_version',
       'display_name',
       'avatar',
+      'meta',
     ]);
 
     if (updateObj.email) {
@@ -121,7 +135,13 @@ export default class User implements UserType {
     // delete the email-based cache to avoid unexpected behaviour since we can update email as well
     await NocoCache.del(`${CacheScope.USER}:${existingUser.email}`);
 
-    await ncMeta.metaUpdate(null, null, MetaTable.USERS, updateObj, id);
+    await ncMeta.metaUpdate(
+      RootScopes.ROOT,
+      RootScopes.ROOT,
+      MetaTable.USERS,
+      prepareForDb(updateObj),
+      id,
+    );
 
     // clear all user related cache
     await this.clearCache(id, ncMeta);
@@ -138,19 +158,36 @@ export default class User implements UserType {
         CacheGetType.TYPE_OBJECT,
       ));
     if (!user) {
-      user = await ncMeta.metaGet2(null, null, MetaTable.USERS, {
-        email,
-      });
+      user = await ncMeta.metaGet2(
+        RootScopes.ROOT,
+        RootScopes.ROOT,
+        MetaTable.USERS,
+        {
+          email,
+        },
+      );
+
+      if (user) {
+        user.meta = parseMetaProp(user);
+      }
+
       await NocoCache.set(`${CacheScope.USER}:${email}`, user);
     }
+
+    if (user?.is_deleted) {
+      return null;
+    }
+
     return this.castType(user);
   }
 
   static async isFirst(ncMeta = Noco.ncMeta) {
-    const isFirst = !(await NocoCache.getAll(`${CacheScope.USER}:*`))?.length;
-    if (isFirst)
-      return !(await ncMeta.metaGet2(null, null, MetaTable.USERS, {}));
-    return false;
+    return !(await ncMeta.metaGet2(
+      RootScopes.ROOT,
+      RootScopes.ROOT,
+      MetaTable.USERS,
+      {},
+    ));
   }
 
   public static async count(
@@ -178,23 +215,60 @@ export default class User implements UserType {
         CacheGetType.TYPE_OBJECT,
       ));
     if (!user) {
-      user = await ncMeta.metaGet2(null, null, MetaTable.USERS, userId);
+      user = await ncMeta.metaGet2(
+        RootScopes.ROOT,
+        RootScopes.ROOT,
+        MetaTable.USERS,
+        userId,
+      );
+
+      if (user) {
+        user.meta = parseMetaProp(user);
+      }
+
       await NocoCache.set(`${CacheScope.USER}:${userId}`, user);
     }
+
+    if (user?.is_deleted) {
+      return null;
+    }
+
     return this.castType(user);
   }
 
   static async getByRefreshToken(refresh_token, ncMeta = Noco.ncMeta) {
-    return await ncMeta.metaGet2(null, null, MetaTable.USERS, {
+    const userRefreshToken = await UserRefreshToken.getByToken(
       refresh_token,
-    });
+      ncMeta,
+    );
+
+    if (!userRefreshToken) {
+      return null;
+    }
+
+    const user = await ncMeta.metaGet2(
+      RootScopes.ROOT,
+      RootScopes.ROOT,
+      MetaTable.USERS,
+      userRefreshToken.fk_user_id,
+    );
+
+    if (user?.is_deleted) {
+      return null;
+    }
+
+    if (user) {
+      user.meta = parseMetaProp(user);
+    }
+
+    return this.castType(user);
   }
 
   public static async list(
     {
       limit,
       offset,
-      query,
+      query = '',
     }: {
       limit?: number | undefined;
       offset?: number | undefined;
@@ -217,6 +291,8 @@ export default class User implements UserType {
         `${MetaTable.USERS}.created_at`,
         `${MetaTable.USERS}.updated_at`,
         `${MetaTable.USERS}.roles`,
+        `${MetaTable.USERS}.display_name`,
+        `${MetaTable.USERS}.meta`,
       )
       .select(
         ncMeta
@@ -228,7 +304,15 @@ export default class User implements UserType {
           .as('projectsCount'),
       );
     if (query) {
-      queryBuilder.where('email', 'like', `%${query.toLowerCase?.()}%`);
+      queryBuilder.where(function () {
+        this.where(function () {
+          this.whereNotNull('display_name')
+            .andWhereNot('display_name', '')
+            .andWhere('display_name', 'like', `%${query.toLowerCase()}%`);
+        }).orWhere(function () {
+          this.where('email', 'like', `%${query.toLowerCase()}%`);
+        });
+      });
     }
 
     return queryBuilder;
@@ -239,38 +323,47 @@ export default class User implements UserType {
 
     const user = await this.get(userId, ncMeta);
 
-    if (!user) NcError.badRequest('User not found');
+    if (!user) NcError.userNotFound(userId);
 
     // clear all user related cache
     await this.clearCache(userId, ncMeta);
 
-    return await ncMeta.metaDelete(null, null, MetaTable.USERS, userId);
+    return await ncMeta.metaDelete(
+      RootScopes.ROOT,
+      RootScopes.ROOT,
+      MetaTable.USERS,
+      userId,
+    );
   }
 
   static async getWithRoles(
+    context: NcContext,
     userId: string,
     args: {
       user?: User;
       baseId?: string;
+      orgId?: string;
     },
     ncMeta = Noco.ncMeta,
   ) {
     const user = args.user ?? (await this.get(userId, ncMeta));
 
-    if (!user) NcError.badRequest('User not found');
+    if (!user) NcError.userNotFound(userId);
 
     const baseRoles = await new Promise((resolve) => {
       if (args.baseId) {
-        BaseUser.get(args.baseId, user.id).then(async (baseUser) => {
-          const roles = baseUser?.roles;
-          // + (user.roles ? `,${user.roles}` : '');
-          if (roles) {
-            resolve(extractRolesObj(roles));
-          } else {
-            resolve(null);
-          }
-          // todo: cache
-        });
+        BaseUser.get(context, args.baseId, user.id, ncMeta).then(
+          async (baseUser) => {
+            const roles = baseUser?.roles;
+            // + (user.roles ? `,${user.roles}` : '');
+            if (roles) {
+              resolve(extractRolesObj(roles));
+            } else {
+              resolve(null);
+            }
+            // todo: cache
+          },
+        );
       } else {
         resolve(null);
       }
@@ -285,13 +378,13 @@ export default class User implements UserType {
 
   protected static async clearCache(userId: string, ncMeta = Noco.ncMeta) {
     const user = await this.get(userId, ncMeta);
-    if (!user) NcError.badRequest('User not found');
+    if (!user) NcError.userNotFound(userId);
 
+    // todo: skip base user cache delete based on flag
     const bases = await BaseUser.getProjectsList(userId, {}, ncMeta);
 
     for (const base of bases) {
       await NocoCache.deepDel(
-        CacheScope.BASE_USER,
         `${CacheScope.BASE_USER}:${base.id}:list`,
         CacheDelDirection.PARENT_TO_CHILD,
       );
@@ -300,5 +393,37 @@ export default class User implements UserType {
     // clear all user related cache
     await NocoCache.del(`${CacheScope.USER}:${userId}`);
     await NocoCache.del(`${CacheScope.USER}:${user.email}`);
+  }
+
+  public static async signUserImage(
+    users: Partial<UserType> | Partial<UserType>[],
+  ) {
+    if (!users) return;
+
+    const promises = [];
+
+    try {
+      for (const user of Array.isArray(users) ? users : [users]) {
+        if (!ncIsObject(user)) {
+          continue;
+        }
+
+        user.meta = parseMetaProp(user);
+
+        if (
+          user.meta &&
+          (user.meta as Record<string, any>).icon &&
+          (user.meta as Record<string, any>).iconType === IconType.IMAGE
+        ) {
+          promises.push(
+            PresignedUrl.signAttachment({
+              attachment: (user.meta as Record<string, any>).icon,
+            }),
+          );
+        }
+      }
+
+      await Promise.all(promises);
+    } catch {}
   }
 }

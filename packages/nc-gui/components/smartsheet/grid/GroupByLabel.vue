@@ -7,13 +7,20 @@ defineProps<{
   modelValue: any
 }>()
 
-provide(ReadonlyInj, true)
+provide(ReadonlyInj, ref(true))
+provide(IsGroupByLabelInj, ref(true))
 </script>
 
 <template>
   <div class="pointer-events-none">
-    <LazySmartsheetRow :row="{ row: { [column.title]: modelValue }, rowMeta: {} }">
-      <LazySmartsheetVirtualCell v-if="isVirtualCol(column)" :model-value="modelValue" class="!text-gray-600" :column="column" />
+    <LazySmartsheetRow :row="{ row: { [column.title as string]: modelValue }, rowMeta: {} }">
+      <LazySmartsheetVirtualCell
+        v-if="isVirtualCol(column)"
+        :model-value="modelValue"
+        class="!text-gray-600"
+        :column="column"
+        :read-only="true"
+      />
 
       <LazySmartsheetCell
         v-else

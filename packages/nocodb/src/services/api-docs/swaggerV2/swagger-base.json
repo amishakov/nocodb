@@ -9,11 +9,10 @@
       "url": "http://localhost:8080"
     }
   ],
-  "paths": {
-  },
+  "paths": {},
   "components": {
     "schemas": {
-      "Paginated": {
+       "Paginated": {
         "title": "Paginated",
         "type": "object",
         "properties": {
@@ -71,12 +70,6 @@
       }
     },
     "securitySchemes": {
-      "xcAuth": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "xc-auth",
-        "description": "JWT access token"
-      },
       "xcToken": {
         "type": "apiKey",
         "in": "header",
@@ -86,7 +79,7 @@
     },
     "responses": {
       "BadRequest": {
-        "description": "BadReqeust",
+        "description": "BadRequest",
         "content": {
           "application/json": {
             "schema": {
@@ -118,9 +111,6 @@
     }
   },
   "security": [
-    {
-      "xcAuth": []
-    },
     {
       "xcToken": []
     }

@@ -2,6 +2,7 @@ import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import type { ErrorObject } from 'ajv';
 import type { NextFunction, Request, Response } from 'express';
+import { swaggerV3 } from '~/schema';
 import swagger from '~/schema';
 import { NcError } from '~/helpers/catchError';
 
@@ -13,6 +14,7 @@ export function parseHrtimeToMilliSeconds(hrtime) {
 const ajv = new Ajv({ strictSchema: false, strict: false }); // Initialize AJV
 
 ajv.addSchema(swagger, 'swagger.json');
+ajv.addSchema(swaggerV3, 'swagger-v3.json');
 addFormats(ajv);
 
 // A middleware generator to validate the request body
@@ -45,7 +47,8 @@ export const validatePayload = (schema: string, payload: any) => {
 
   // If the request body is not valid, throw error
   if (!valid) {
-    const errors: ErrorObject[] | null | undefined = ajv.errors;
+    const errors: ErrorObject[] | null | undefined =
+      ajv.errors || validate.errors;
 
     // If the request body is invalid, throw error with error message  and errors
     NcError.ajvValidationError({

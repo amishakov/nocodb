@@ -1,15 +1,26 @@
 <script lang="ts" setup>
-const props = defineProps<{
-  value?: string
-  placeholder?: string
-  dropdownClassName?: string
-  showSearch?: boolean
-  // filterOptions is a function
-  filterOption?: (input: string, option: any) => boolean
-  dropdownMatchSelectWidth?: boolean
-  allowClear?: boolean
-  loading?: boolean
-}>()
+import type { iconMap } from '#imports'
+
+const props = withDefaults(
+  defineProps<{
+    value?: string | string[]
+    placeholder?: string
+    mode?: 'multiple' | 'tags'
+    size?: 'small' | 'middle' | 'large'
+    dropdownClassName?: string
+    showSearch?: boolean
+    // filterOptions is a function
+    filterOption?: (input: string, option: any) => boolean
+    dropdownMatchSelectWidth?: boolean
+    allowClear?: boolean
+    loading?: boolean
+    suffixIcon?: keyof typeof iconMap
+    maxTagCount?: number
+  }>(),
+  {
+    suffixIcon: 'arrowDown',
+  },
+)
 
 const emits = defineEmits(['update:value', 'change'])
 
@@ -23,13 +34,7 @@ const dropdownClassName = computed(() => {
   return className
 })
 
-const showSearch = computed(() => props.showSearch)
-
-const filterOption = computed(() => props.filterOption)
-
-const dropdownMatchSelectWidth = computed(() => props.dropdownMatchSelectWidth)
-
-const loading = computed(() => props.loading)
+const { showSearch, filterOption, dropdownMatchSelectWidth, loading, mode } = toRefs(props)
 
 const vModel = useVModel(props, 'value', emits)
 
@@ -41,20 +46,27 @@ const onChange = (value: string) => {
 <template>
   <a-select
     v-model:value="vModel"
-    :placeholder="placeholder"
-    class="nc-select"
-    :dropdown-class-name="dropdownClassName"
-    :show-search="showSearch"
-    :filter-option="filterOption"
-    :dropdown-match-select-width="dropdownMatchSelectWidth"
+    :size="size"
     :allow-clear="allowClear"
-    :loading="loading"
     :disabled="loading"
-    @change="onChange"
+    :dropdown-class-name="dropdownClassName"
+    :dropdown-match-select-width="dropdownMatchSelectWidth"
+    :filter-option="filterOption"
+    :loading="loading"
+    :mode="mode"
+    :placeholder="placeholder"
+    :show-search="showSearch"
+    :max-tag-count="maxTagCount"
+    class="nc-select"
+    @change="onChange as any"
   >
     <template #suffixIcon>
       <GeneralLoader v-if="loading" />
-      <GeneralIcon v-else icon="arrowDown" class="text-gray-800 nc-select-expand-btn" />
+      <GeneralIcon v-else class="text-gray-800 nc-select-expand-btn" :icon="suffixIcon" />
+    </template>
+
+    <template v-if="$slots.dropdownRender" #dropdownRender="{ menuNode }">
+      <slot name="dropdownRender" :menu-node="menuNode" />
     </template>
     <slot />
   </a-select>
@@ -78,15 +90,26 @@ const onChange = (value: string) => {
   height: fit-content;
   .ant-select-selector {
     box-shadow: 0px 5px 3px -2px rgba(0, 0, 0, 0.02), 0px 3px 1px -2px rgba(0, 0, 0, 0.06);
-    @apply border-1 border-gray-200 !rounded-lg;
+    @apply border-1 border-gray-200 rounded-lg shadow-default;
   }
 
   .ant-select-selection-item {
-    @apply font-medium pr-3;
+    @apply font-medium pr-3 rounded-md flex items-center;
   }
 
   .ant-select-selection-placeholder {
     @apply text-gray-600;
+  }
+  .ant-select-selection-item-remove {
+    @apply text-gray-800 !pb-1;
+  }
+
+  .ant-select-clear {
+    @apply flex;
+
+    svg {
+      @apply flex-none;
+    }
   }
 }
 .nc-select.ant-select-focused:not(.ant-select-disabled).ant-select:not(.ant-select-customize-input) .ant-select-selector {
@@ -99,10 +122,10 @@ const onChange = (value: string) => {
 }
 
 .nc-select-dropdown {
-  @apply !rounded-xl py-1.5;
+  @apply !rounded-lg py-1.5;
 
   .rc-virtual-list-holder {
-    overflow-y: scroll;
+    overflow-y: auto;
     overflow-x: hidden;
     font-weight: 500;
 
@@ -122,7 +145,7 @@ const onChange = (value: string) => {
     }
     &::-webkit-scrollbar-thumb {
       width: 4px;
-      @apply bg-gray-300;
+      @apply bg-gray-300 rounded-md;
     }
     &::-webkit-scrollbar-thumb:hover {
       @apply bg-gray-400;

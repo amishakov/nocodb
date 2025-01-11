@@ -37,9 +37,10 @@ test.describe('Import', () => {
   });
 
   test('Excel', async () => {
+    // Everything will be mapped with `SingleLineText` as we disabled auto column mapping
     const col = [
-      { type: 'Number', name: 'number' },
-      { type: 'Decimal', name: 'float' },
+      { type: 'SingleLineText', name: 'number' },
+      { type: 'SingleLineText', name: 'float' },
       { type: 'SingleLineText', name: 'text' },
     ];
     const expected = [
@@ -50,7 +51,7 @@ test.describe('Import', () => {
 
     await dashboard.treeView.quickImport({ title: 'Microsoft Excel', baseTitle: context.base.title, context });
     await dashboard.importTemplate.import({
-      file: `${process.cwd()}/fixtures/sampleFiles/simple.xlsx`,
+      file: `${__dirname}/../../../fixtures/sampleFiles/simple.xlsx`,
       result: expected,
     });
 

@@ -6,22 +6,32 @@ const { isUIAllowed } = useRoles()
 
 const { appInfo } = useGlobal()
 
-const { isWorkspaceLoading, isWorkspaceSettingsPageOpened } = storeToRefs(workspaceStore)
+const { meta: metaKey, control } = useMagicKeys()
 
-const { navigateToWorkspaceSettings } = workspaceStore
+const { isWorkspaceLoading, isWorkspaceSettingsPageOpened, isIntegrationsPageOpened } = storeToRefs(workspaceStore)
+
+const { navigateToWorkspaceSettings, navigateToIntegrations: _navigateToIntegrations } = workspaceStore
 
 const { isSharedBase } = storeToRefs(baseStore)
 
 const isCreateProjectOpen = ref(false)
 
 const navigateToSettings = () => {
+  const cmdOrCtrl = isMac() ? metaKey.value : control.value
+
   // TODO: Handle cloud case properly
-  navigateToWorkspaceSettings()
+  navigateToWorkspaceSettings('', cmdOrCtrl)
 
   // if (appInfo.value.baseHostName) {
   //   window.location.href = `https://app.${appInfo.value.baseHostName}/dashboard`
   // } else {
   // }
+}
+
+const navigateToIntegrations = () => {
+  const cmdOrCtrl = isMac() ? metaKey.value : control.value
+
+  _navigateToIntegrations('', cmdOrCtrl)
 }
 </script>
 
@@ -43,36 +53,65 @@ const navigateToSettings = () => {
     </div>
   </template>
   <template v-else-if="!isSharedBase">
-    <div class="xs:hidden flex flex-col p-1 gap-y-0.5 mt-0.25 mb-0.5 truncate">
-      <DashboardSidebarTopSectionHeader />
+    <div class="xs:hidden flex flex-col p-1 mt-0.25 mb-0.5 truncate">
+      <!-- <DashboardSidebarTopSectionHeader /> -->
 
       <NcButton
-        v-if="isUIAllowed('workspaceSettings')"
+        v-if="isUIAllowed('workspaceSettings') || isUIAllowed('workspaceCollaborators')"
         v-e="['c:team:settings']"
         type="text"
-        size="small"
-        class="nc-sidebar-top-button !xs:hidden"
+        size="xsmall"
+        class="nc-sidebar-top-button !xs:hidden my-0.5 !h-7"
         data-testid="nc-sidebar-team-settings-btn"
         :centered="false"
         :class="{
-          '!text-brand-500 !bg-brand-50 !hover:bg-brand-50': isWorkspaceSettingsPageOpened,
-          '!hover:bg-gray-200': !isWorkspaceSettingsPageOpened,
+          '!text-brand-600 !bg-brand-50 !hover:bg-brand-50': isWorkspaceSettingsPageOpened,
+          '!hover:(bg-gray-200 text-gray-700)': !isWorkspaceSettingsPageOpened,
         }"
         @click="navigateToSettings"
       >
-        <div class="flex items-center gap-2">
-          <GeneralIcon icon="settings" class="!h-4" />
+        <div
+          class="flex items-center gap-2"
+          :class="{
+            'font-semibold': isWorkspaceSettingsPageOpened,
+          }"
+        >
+          <GeneralIcon icon="ncSettings" class="!h-4 w-4" />
           <div>{{ $t('title.teamAndSettings') }}</div>
+        </div>
+      </NcButton>
+      <NcButton
+        v-if="isUIAllowed('workspaceSettings')"
+        v-e="['c:integrations']"
+        type="text"
+        size="xsmall"
+        class="nc-sidebar-top-button !xs:hidden my-0.5 !h-7"
+        data-testid="nc-sidebar-integrations-btn"
+        :centered="false"
+        :class="{
+          '!text-brand-600 !bg-brand-50 !hover:bg-brand-50': isIntegrationsPageOpened,
+          '!hover:(bg-gray-200 text-gray-700)': !isIntegrationsPageOpened,
+        }"
+        @click="navigateToIntegrations"
+      >
+        <div
+          class="flex items-center gap-2"
+          :class="{
+            'font-semibold': isIntegrationsPageOpened,
+          }"
+        >
+          <GeneralIcon icon="integration" class="!h-4" />
+          <div>{{ $t('general.integrations') }}</div>
         </div>
       </NcButton>
       <WorkspaceCreateProjectBtn
         v-model:is-open="isCreateProjectOpen"
         modal
         type="text"
-        class="nc-sidebar-top-button !hover:bg-gray-200 !xs:hidden"
+        class="nc-sidebar-top-button !hover:(bg-gray-200 text-gray-700) !xs:hidden !h-7 my-0.5"
         data-testid="nc-sidebar-create-base-btn"
       >
-        <div class="gap-x-2 flex flex-row w-full items-center !font-normal">
+        <div class="gap-x-2 flex flex-row w-full items-center">
           <GeneralIcon icon="plus" />
 
           <div class="flex">{{ $t('title.createBase') }}</div>
@@ -84,6 +123,6 @@ const navigateToSettings = () => {
 
 <style lang="scss" scoped>
 .nc-sidebar-top-button {
-  @apply w-full !rounded-md !font-normal !px-3;
+  @apply w-full !rounded-md !font-medium !px-3;
 }
 </style>

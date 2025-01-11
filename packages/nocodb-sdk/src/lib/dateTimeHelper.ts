@@ -64,7 +64,7 @@ export function getDateTimeFormat(v: string) {
       }
     }
   }
-  return 'YYYY/MM/DD';
+  return 'YYYY/MM/DD HH:mm';
 }
 
 export function parseStringDate(v: string, dateFormat: string) {
@@ -79,14 +79,17 @@ export function parseStringDate(v: string, dateFormat: string) {
 
 export function parseStringDateTime(
   v: string,
-  dateTimeFormat: string = `${dateFormats[0]} ${timeFormats[0]}`
+  dateTimeFormat: string = `${dateFormats[0]} ${timeFormats[0]}`,
+  toLocal: boolean = true
 ) {
-  const dayjsObj = dayjs(v).local();
+  const dayjsObj = toLocal ? dayjs(v).local() : dayjs(v);
 
   if (dayjsObj.isValid()) {
     v = dayjsObj.format(dateTimeFormat);
   } else {
-    v = dayjs(v, dateTimeFormat).local().format(dateTimeFormat);
+    v = toLocal
+      ? dayjs(v, dateTimeFormat).local().format(dateTimeFormat)
+      : dayjs(v, dateTimeFormat).format(dateTimeFormat);
   }
 
   return v;
@@ -133,4 +136,17 @@ export const timeAgo = (date: any) => {
   }
   // show in local time
   return dayjs(date).fromNow();
+};
+
+export const isValidTimeFormat = (value: string, format: string) => {
+  const regexValidator = {
+    [timeFormats[0]]: /^([01]\d|2[0-3]):[0-5]\d$/,
+    [timeFormats[1]]: /^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/,
+    [timeFormats[2]]: /^([01]\d|2[0-3]):[0-5]\d:[0-5]\d\.\d{3}$/,
+  };
+
+  if (regexValidator[format]) {
+    return regexValidator[format].test(value);
+  }
+  return false;
 };

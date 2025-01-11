@@ -1,5 +1,6 @@
 import UITypes from '../UITypes';
 import { IDType } from './index';
+import { ColumnType } from '~/lib';
 
 const dbTypes = [
   'int',
@@ -80,28 +81,51 @@ export class SqliteUi {
         title: 'CreatedAt',
         dt: 'datetime',
         dtx: 'specificType',
-        ct: 'varchar',
+        ct: 'datetime',
         nrqd: true,
         rqd: false,
         ck: false,
         pk: false,
         un: false,
         ai: false,
-        cdf: 'CURRENT_TIMESTAMP',
         clen: 45,
         np: null,
         ns: null,
         dtxp: '',
         dtxs: '',
         altered: 1,
-        uidt: UITypes.DateTime,
+        uidt: UITypes.CreatedTime,
         uip: '',
         uicn: '',
+        system: true,
       },
       {
         column_name: 'updated_at',
         title: 'UpdatedAt',
         dt: 'datetime',
+        dtx: 'specificType',
+        ct: 'datetime',
+        nrqd: true,
+        rqd: false,
+        ck: false,
+        pk: false,
+        un: false,
+        ai: false,
+        clen: 45,
+        np: null,
+        ns: null,
+        dtxp: '',
+        dtxs: '',
+        altered: 1,
+        uidt: UITypes.LastModifiedTime,
+        uip: '',
+        uicn: '',
+        system: true,
+      },
+      {
+        column_name: 'created_by',
+        title: 'nc_created_by',
+        dt: 'varchar',
         dtx: 'specificType',
         ct: 'varchar',
         nrqd: true,
@@ -110,16 +134,62 @@ export class SqliteUi {
         pk: false,
         un: false,
         ai: false,
-        cdf: 'CURRENT_TIMESTAMP',
         clen: 45,
         np: null,
         ns: null,
         dtxp: '',
         dtxs: '',
         altered: 1,
-        uidt: UITypes.DateTime,
+        uidt: UITypes.CreatedBy,
         uip: '',
         uicn: '',
+        system: true,
+      },
+      {
+        column_name: 'updated_by',
+        title: 'nc_updated_by',
+        dt: 'varchar',
+        dtx: 'specificType',
+        ct: 'varchar',
+        nrqd: true,
+        rqd: false,
+        ck: false,
+        pk: false,
+        un: false,
+        ai: false,
+        clen: 45,
+        np: null,
+        ns: null,
+        dtxp: '',
+        dtxs: '',
+        altered: 1,
+        uidt: UITypes.LastModifiedBy,
+        uip: '',
+        uicn: '',
+        system: true,
+      },
+      {
+        column_name: 'nc_order',
+        title: 'nc_order',
+        dt: 'real',
+        dtx: 'specificType',
+        ct: 'real',
+        nrqd: true,
+        rqd: false,
+        ck: false,
+        pk: false,
+        un: false,
+        ai: false,
+        clen: null,
+        np: null,
+        ns: null,
+        dtxp: '',
+        dtxs: '',
+        altered: 1,
+        uidt: UITypes.Order,
+        uip: '',
+        uicn: '',
+        system: true,
       },
     ];
   }
@@ -490,7 +560,7 @@ export class SqliteUi {
       case 'date':
         return 'Date';
       case 'datetime':
-        return 'CreateTime';
+        return 'CreatedTime';
       case 'time':
         return 'Time';
       case 'year':
@@ -626,7 +696,7 @@ export class SqliteUi {
       case 'DateTime':
         colProp.dt = 'datetime';
         break;
-      case 'CreateTime':
+      case 'CreatedTime':
         colProp.dt = 'datetime';
         break;
       case 'LastModifiedTime':
@@ -643,6 +713,9 @@ export class SqliteUi {
         break;
       case 'JSON':
         colProp.dt = 'text';
+        break;
+      case 'Order':
+        colProp.dt = 'real';
         break;
       default:
         colProp.dt = 'varchar';
@@ -813,6 +886,7 @@ export class SqliteUi {
         ];
 
       case 'Formula':
+      case 'Button':
         return ['text', 'varchar'];
 
       case 'Rollup':
@@ -837,7 +911,7 @@ export class SqliteUi {
         return ['date', 'varchar'];
 
       case 'DateTime':
-      case 'CreateTime':
+      case 'CreatedTime':
       case 'LastModifiedTime':
         return ['datetime', 'timestamp'];
 
@@ -860,8 +934,6 @@ export class SqliteUi {
         return ['text'];
       case 'JSON':
         return ['text'];
-
-      case 'Button':
       default:
         return dbTypes;
     }
@@ -869,10 +941,6 @@ export class SqliteUi {
 
   static getUnsupportedFnList() {
     return [
-      'LOG',
-      'EXP',
-      'POWER',
-      'SQRT',
       'XOR',
       'REGEX_MATCH',
       'REGEX_EXTRACT',
@@ -880,12 +948,27 @@ export class SqliteUi {
       'VALUE',
       'COUNTA',
       'COUNT',
-      'ROUNDDOWN',
-      'ROUNDUP',
       'DATESTR',
-      'DAY',
-      'MONTH',
-      'HOUR',
     ];
+  }
+
+  static getCurrentDateDefault(_col: Partial<ColumnType>) {
+    return null;
+  }
+
+  static isEqual(dataType1: string, dataType2: string) {
+    if (dataType1 === dataType2) return true;
+
+    const abstractType1 = this.getAbstractType({ dt: dataType1 });
+    const abstractType2 = this.getAbstractType({ dt: dataType2 });
+
+    if (
+      abstractType1 &&
+      abstractType1 === abstractType2 &&
+      ['integer', 'float'].includes(abstractType1)
+    )
+      return true;
+
+    return false;
   }
 }

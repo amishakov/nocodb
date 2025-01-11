@@ -147,14 +147,17 @@ watch(showShareModal, (val) => {
             class="max-w-79/100 ml-2 px-2 py-0.5 rounded-md bg-gray-100 capitalize text-ellipsis overflow-hidden"
             :style="{ wordBreak: 'keep-all', whiteSpace: 'nowrap' }"
           >
-            {{ activeView.title }}
+            <span v-if="activeView.is_default">{{ $t('labels.defaultView') }}</span>
+            <span v-else>
+              {{ activeView.title }}
+            </span>
           </div>
         </div>
         <DlgShareAndCollaborateSharePage />
       </div>
       <div class="share-base">
         <div class="flex flex-row items-center gap-x-2 px-4 pt-3 pb-3 select-none">
-          <GeneralProjectIcon :type="base.type" class="nc-view-icon group-hover" />
+          <GeneralProjectIcon :color="parseProp(base.meta).iconColor" :type="base.type" class="nc-view-icon group-hover" />
 
           <div>{{ $t('activity.shareBase.label') }}</div>
           <div

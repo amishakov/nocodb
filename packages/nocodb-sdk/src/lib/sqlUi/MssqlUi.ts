@@ -1,5 +1,6 @@
 import UITypes from '../UITypes';
 import { IDType } from './index';
+import { ColumnType } from '~/lib';
 
 const dbTypes = [
   'bigint',
@@ -68,9 +69,9 @@ export class MssqlUi {
       {
         column_name: 'title',
         title: 'Title',
-        dt: 'varchar',
+        dt: 'TEXT',
         dtx: 'specificType',
-        ct: 'varchar(45)',
+        ct: null,
         nrqd: true,
         rqd: false,
         ck: false,
@@ -78,10 +79,10 @@ export class MssqlUi {
         un: false,
         ai: false,
         cdf: null,
-        clen: 45,
+        clen: null,
         np: null,
         ns: null,
-        dtxp: '45',
+        dtxp: '',
         dtxs: '',
         altered: 1,
         uidt: 'SingleLineText',
@@ -93,28 +94,52 @@ export class MssqlUi {
         title: 'CreatedAt',
         dt: 'datetime',
         dtx: 'specificType',
-        ct: 'varchar(45)',
+        ct: 'datetime',
         nrqd: true,
         rqd: false,
         ck: false,
         pk: false,
         un: false,
         ai: false,
-        cdf: 'GETDATE()',
         clen: 45,
         np: null,
         ns: null,
         dtxp: '',
         dtxs: '',
         altered: 1,
-        uidt: UITypes.DateTime,
+        uidt: UITypes.CreatedTime,
         uip: '',
         uicn: '',
+        system: true,
       },
       {
         column_name: 'updated_at',
         title: 'UpdatedAt',
         dt: 'datetime',
+        dtx: 'specificType',
+        ct: 'datetime',
+        nrqd: true,
+        rqd: false,
+        ck: false,
+        pk: false,
+        un: false,
+        ai: false,
+        au: true,
+        clen: 45,
+        np: null,
+        ns: null,
+        dtxp: '',
+        dtxs: '',
+        altered: 1,
+        uidt: UITypes.LastModifiedTime,
+        uip: '',
+        uicn: '',
+        system: true,
+      },
+      {
+        column_name: 'created_by',
+        title: 'nc_created_by',
+        dt: 'varchar',
         dtx: 'specificType',
         ct: 'varchar(45)',
         nrqd: true,
@@ -123,17 +148,63 @@ export class MssqlUi {
         pk: false,
         un: false,
         ai: false,
-        au: true,
-        cdf: 'GETDATE()',
         clen: 45,
         np: null,
         ns: null,
-        dtxp: '',
+        dtxp: '45',
         dtxs: '',
         altered: 1,
-        uidt: UITypes.DateTime,
+        uidt: UITypes.CreatedBy,
         uip: '',
         uicn: '',
+        system: true,
+      },
+      {
+        column_name: 'updated_by',
+        title: 'nc_updated_by',
+        dt: 'varchar',
+        dtx: 'specificType',
+        ct: 'varchar(45)',
+        nrqd: true,
+        rqd: false,
+        ck: false,
+        pk: false,
+        un: false,
+        ai: false,
+        clen: 45,
+        np: null,
+        ns: null,
+        dtxp: '45',
+        dtxs: '',
+        altered: 1,
+        uidt: UITypes.LastModifiedBy,
+        uip: '',
+        uicn: '',
+        system: true,
+      },
+      {
+        column_name: 'nc_order',
+        title: 'nc_order',
+        dt: 'decimal',
+        dtx: 'specificType',
+        ct: 'decimal(38,19)',
+        nrqd: true,
+        rqd: false,
+        ck: false,
+        pk: false,
+        un: false,
+        ai: false,
+        cdf: null,
+        clen: null,
+        np: 38,
+        ns: 19,
+        dtxp: '38,19',
+        dtxs: '',
+        altered: 1,
+        uidt: UITypes.Order,
+        uip: '',
+        uicn: '',
+        system: true,
       },
     ];
   }
@@ -141,9 +212,9 @@ export class MssqlUi {
   static getNewColumn(suffix) {
     return {
       column_name: 'title' + suffix,
-      dt: 'varchar',
+      dt: 'TEXT',
       dtx: 'specificType',
-      ct: 'varchar(45)',
+      ct: null,
       nrqd: true,
       rqd: false,
       ck: false,
@@ -151,10 +222,10 @@ export class MssqlUi {
       un: false,
       ai: false,
       cdf: null,
-      clen: 45,
+      clen: null,
       np: null,
       ns: null,
-      dtxp: '45',
+      dtxp: '',
       dtxs: '',
       altered: 1,
       uidt: 'SingleLineText',
@@ -591,7 +662,7 @@ export class MssqlUi {
       case 'date':
         return 'Date';
       case 'datetime':
-        return 'CreateTime';
+        return 'CreatedTime';
       case 'time':
         return 'Time';
       case 'year':
@@ -636,7 +707,7 @@ export class MssqlUi {
         colProp.dt = 'varchar';
         break;
       case 'SingleLineText':
-        colProp.dt = 'varchar';
+        colProp.dt = 'text';
         break;
       case 'LongText':
         colProp.dt = 'text';
@@ -687,7 +758,7 @@ export class MssqlUi {
         };
         break;
       case 'URL':
-        colProp.dt = 'varchar';
+        colProp.dt = 'text';
         colProp.validate = {
           func: ['isURL'],
           args: [''],
@@ -733,7 +804,7 @@ export class MssqlUi {
       case 'DateTime':
         colProp.dt = 'datetimeoffset';
         break;
-      case 'CreateTime':
+      case 'CreatedTime':
         colProp.dt = 'datetime';
         break;
       case 'LastModifiedTime':
@@ -773,7 +844,7 @@ export class MssqlUi {
       case 'Attachment':
       case 'Collaborator':
       case 'GeoData':
-        return ['char', 'ntext', 'text', 'varchar', 'nvarchar'];
+        return ['text', 'varchar', 'nvarchar', 'char', 'ntext'];
 
       case 'JSON':
         return ['text', 'ntext'];
@@ -798,7 +869,7 @@ export class MssqlUi {
         return ['varchar'];
 
       case 'URL':
-        return ['varchar', 'text'];
+        return ['text', 'varchar'];
 
       case 'Number':
         return [
@@ -870,6 +941,7 @@ export class MssqlUi {
         ];
 
       case 'Formula':
+      case 'Button':
         return ['text', 'ntext', 'varchar', 'nvarchar'];
 
       case 'Rollup':
@@ -885,7 +957,7 @@ export class MssqlUi {
         return ['date'];
 
       case 'DateTime':
-      case 'CreateTime':
+      case 'CreatedTime':
       case 'LastModifiedTime':
         return [
           'datetimeoffset',
@@ -902,7 +974,6 @@ export class MssqlUi {
       case 'Geometry':
         return ['geometry'];
 
-      case 'Button':
       default:
         return dbTypes;
     }
@@ -921,5 +992,25 @@ export class MssqlUi {
       'ROUNDUP',
       'DATESTR',
     ];
+  }
+
+  static getCurrentDateDefault(_col: Partial<ColumnType>) {
+    return null;
+  }
+
+  static isEqual(dataType1: string, dataType2: string) {
+    if (dataType1 === dataType2) return true;
+
+    const abstractType1 = this.getAbstractType({ dt: dataType1 });
+    const abstractType2 = this.getAbstractType({ dt: dataType2 });
+
+    if (
+      abstractType1 &&
+      abstractType1 === abstractType2 &&
+      ['integer', 'float'].includes(abstractType1)
+    )
+      return true;
+
+    return false;
   }
 }

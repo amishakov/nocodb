@@ -13,17 +13,16 @@ import {
 import { DriverClient } from './interfaces';
 import type { Connection, DbConfig } from './interfaces';
 
-export async function prepareEnv() {
-  if (process.env.NC_DATABASE_URL_FILE || process.env.DATABASE_URL_FILE) {
-    const database_url = await promisify(fs.readFile)(
-      process.env.NC_DATABASE_URL_FILE || process.env.DATABASE_URL_FILE,
-      'utf-8',
-    );
+export async function prepareEnv({
+  databaseUrlFile = process.env.NC_DATABASE_URL_FILE ||
+    process.env.DATABASE_URL_FILE,
+  databaseUrl = process.env.NC_DATABASE_URL || process.env.DATABASE_URL,
+} = {}) {
+  if (databaseUrlFile) {
+    const database_url = await promisify(fs.readFile)(databaseUrlFile, 'utf-8');
     process.env.NC_DB = jdbcToXcUrl(database_url);
-  } else if (process.env.NC_DATABASE_URL || process.env.DATABASE_URL) {
-    process.env.NC_DB = jdbcToXcUrl(
-      process.env.NC_DATABASE_URL || process.env.DATABASE_URL,
-    );
+  } else if (databaseUrl) {
+    process.env.NC_DB = jdbcToXcUrl(databaseUrl);
   }
 }
 
@@ -109,14 +108,16 @@ export function jdbcToXcUrl(url: string): string {
   const extraParams = [];
 
   for (const [key, value] of Object.entries(extra)) {
-    extraParams.push(`${key}=${value}`);
+    extraParams.push(`${key}=${encodeURIComponent(value + '')}`);
   }
 
   const res = `${driverClientMapping[driver] || driver}://${host}${
     port ? `:${port}` : ''
-  }?${user ? `u=${user}&` : ''}${password ? `p=${password}&` : ''}${
-    database ? `d=${database}&` : ''
-  }${extraParams.join('&')}`;
+  }?${user ? `u=${encodeURIComponent(user)}&` : ''}${
+    password ? `p=${encodeURIComponent(password)}&` : ''
+  }${database ? `d=${encodeURIComponent(database)}&` : ''}${extraParams.join(
+    '&',
+  )}`;
 
   return res;
 }

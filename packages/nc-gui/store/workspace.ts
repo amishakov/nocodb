@@ -1,14 +1,24 @@
-import type { BaseType } from 'nocodb-sdk'
+import type { AuditType, BaseType, PaginatedType } from 'nocodb-sdk'
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import { message } from 'ant-design-vue'
 import { isString } from '@vue/shared'
-import { computed, navigateTo, ref, useBases, useCommandPalette, useNuxtApp, useRouter, useTheme } from '#imports'
-import type { ThemeConfig } from '#imports'
+import type { AuditLogsQuery } from '~/lib/types'
+
+const defaultAuditLogsQuery = {
+  baseId: undefined,
+  sourceId: undefined,
+  orderBy: {
+    created_at: 'desc',
+    user: undefined,
+  },
+} as Partial<AuditLogsQuery>
 
 export const useWorkspace = defineStore('workspaceStore', () => {
   const basesStore = useBases()
 
   const collaborators = ref<any[] | null>()
+
+  const allCollaborators = ref<any[] | null>()
 
   const router = useRouter()
 
@@ -31,6 +41,10 @@ export const useWorkspace = defineStore('workspaceStore', () => {
 
   const isWorkspaceSettingsPageOpened = computed(() => route.value.name === 'index-typeOrId-settings')
 
+  const isIntegrationsPageOpened = computed(() => route.value.name === 'index-typeOrId-integrations')
+
+  const isFeedPageOpened = computed(() => route.value.name === 'index-typeOrId-feed')
+
   const isWorkspaceLoading = ref(true)
   const isCollaboratorsLoading = ref(true)
   const isInvitingCollaborators = ref(false)
@@ -47,6 +61,8 @@ export const useWorkspace = defineStore('workspaceStore', () => {
   const activeWorkspace = computed(() => {
     return { id: 'default', title: 'default', meta: {}, roles: '' } as any
   })
+
+  const workspaceRole = computed(() => activeWorkspace.value?.roles)
 
   const activeWorkspaceMeta = computed<Record<string, any>>(() => {
     const defaultMeta = {}
@@ -79,6 +95,8 @@ export const useWorkspace = defineStore('workspaceStore', () => {
   const updateCollaborator = async (..._args: any) => {}
 
   const loadWorkspace = async (..._args: any) => {}
+
+  const moveToOrg = async (..._args: any) => {}
 
   async function populateWorkspace(..._args: any) {
     isWorkspaceLoading.value = true
@@ -199,9 +217,47 @@ export const useWorkspace = defineStore('workspaceStore', () => {
     })
   }
 
-  const navigateToWorkspaceSettings = async () => {
-    navigateTo('/account/users')
+  const navigateToWorkspaceSettings = async (_?: string, cmdOrCtrl?: boolean) => {
+    if (cmdOrCtrl) {
+      await navigateTo('#/account/users', {
+        open: navigateToBlankTargetOpenOption,
+      })
+    } else {
+      await navigateTo('/account/users')
+    }
   }
+
+  // Todo: write logic to navigate to integrations
+  const navigateToIntegrations = async (_?: string, cmdOrCtrl?: boolean, query: Record<string, string> = {}) => {
+    if (cmdOrCtrl) {
+      await navigateTo(
+        { path: '/nc/integrations', query },
+        {
+          open: navigateToBlankTargetOpenOption,
+        },
+      )
+    } else {
+      await navigateTo({ path: '/nc/integrations', query })
+    }
+  }
+
+  const navigateToFeed = async (_?: string, cmdOrCtrl?: boolean) => {
+    if (cmdOrCtrl) {
+      await navigateTo('/nc/feed', {
+        open: navigateToBlankTargetOpenOption,
+      })
+    } else {
+      await navigateTo('/nc/feed')
+    }
+  }
+
+  const auditLogsQuery = ref<Partial<AuditLogsQuery>>(defaultAuditLogsQuery)
+
+  const audits = ref<null | Array<AuditType>>(null)
+
+  const auditPaginationData = ref<PaginatedType>({ page: 1, pageSize: 25, totalRows: 0 })
+
+  const loadAudits = async (..._args: any) => {}
 
   function setLoadingState(isLoading = false) {
     isWorkspaceLoading.value = isLoading
@@ -224,6 +280,7 @@ export const useWorkspace = defineStore('workspaceStore', () => {
     removeCollaborator,
     updateCollaborator,
     collaborators,
+    allCollaborators,
     isInvitingCollaborators,
     isCollaboratorsLoading,
     addToFavourite,
@@ -246,6 +303,16 @@ export const useWorkspace = defineStore('workspaceStore', () => {
     isWorkspaceSettingsPageOpened,
     workspaceUserCount,
     getPlanLimit,
+    workspaceRole,
+    moveToOrg,
+    auditLogsQuery,
+    audits,
+    auditPaginationData,
+    navigateToFeed,
+    loadAudits,
+    isIntegrationsPageOpened,
+    navigateToIntegrations,
+    isFeedPageOpened,
   }
 })
 

@@ -8,15 +8,18 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { extractRolesObj, TableReqType } from 'nocodb-sdk';
+import { extractRolesObj, NcRequest, TableReqType } from 'nocodb-sdk';
 import { GlobalGuard } from '~/guards/global/global.guard';
 import { TablesService } from '~/services/tables.service';
 import { Acl } from '~/middlewares/extract-ids/extract-ids.middleware';
 import { PagedResponseImpl } from '~/helpers/PagedResponse';
 import { MetaApiLimiterGuard } from '~/guards/meta-api-limiter.guard';
+import { TenantContext } from '~/decorators/tenant-context.decorator';
+import { NcContext } from '~/interface/config';
 
 @Controller()
 @UseGuards(MetaApiLimiterGuard, GlobalGuard)
@@ -31,13 +34,14 @@ export class TablesController {
   ])
   @Acl('tableList')
   async tableList(
+    @TenantContext() context: NcContext,
     @Param('baseId') baseId: string,
     @Param('sourceId') sourceId: string,
     @Query('includeM2M') includeM2M: string,
     @Request() req,
   ) {
     return new PagedResponseImpl(
-      await this.tablesService.getAccessibleTables({
+      await this.tablesService.getAccessibleTables(context, {
         baseId,
         sourceId,
         includeM2M: includeM2M === 'true',
@@ -55,16 +59,18 @@ export class TablesController {
   @HttpCode(200)
   @Acl('tableCreate')
   async tableCreate(
+    @TenantContext() context: NcContext,
     @Param('baseId') baseId: string,
     @Param('sourceId') sourceId: string,
     @Body() body: TableReqType,
     @Request() req,
   ) {
-    const result = await this.tablesService.tableCreate({
+    const result = await this.tablesService.tableCreate(context, {
       baseId: baseId,
       sourceId: sourceId,
       table: body,
       user: req.user,
+      req,
     });
 
     return result;
@@ -72,11 +78,18 @@ export class TablesController {
 
   @Get(['/api/v1/db/meta/tables/:tableId', '/api/v2/meta/tables/:tableId'])
   @Acl('tableGet')
-  async tableGet(@Param('tableId') tableId: string, @Request() req) {
-    const table = await this.tablesService.getTableWithAccessibleViews({
-      tableId: req.params.tableId,
-      user: req.user,
-    });
+  async tableGet(
+    @TenantContext() context: NcContext,
+    @Param('tableId') tableId: string,
+    @Request() req,
+  ) {
+    const table = await this.tablesService.getTableWithAccessibleViews(
+      context,
+      {
+        tableId: req.params.tableId,
+        user: req.user,
+      },
+    );
 
     return table;
   }
@@ -84,11 +97,12 @@ export class TablesController {
   @Patch(['/api/v1/db/meta/tables/:tableId', '/api/v2/meta/tables/:tableId'])
   @Acl('tableUpdate')
   async tableUpdate(
+    @TenantContext() context: NcContext,
     @Param('tableId') tableId: string,
     @Body() body: TableReqType,
     @Request() req,
   ) {
-    await this.tablesService.tableUpdate({
+    await this.tablesService.tableUpdate(context, {
       tableId: tableId,
       table: body,
       baseId: req.ncBaseId,
@@ -100,8 +114,12 @@ export class TablesController {
 
   @Delete(['/api/v1/db/meta/tables/:tableId', '/api/v2/meta/tables/:tableId'])
   @Acl('tableDelete')
-  async tableDelete(@Param('tableId') tableId: string, @Request() req) {
-    const result = await this.tablesService.tableDelete({
+  async tableDelete(
+    @TenantContext() context: NcContext,
+    @Param('tableId') tableId: string,
+    @Request() req,
+  ) {
+    const result = await this.tablesService.tableDelete(context, {
       tableId: req.params.tableId,
       user: (req as any).user,
       req,
@@ -117,12 +135,15 @@ export class TablesController {
   @Acl('tableReorder')
   @HttpCode(200)
   async tableReorder(
+    @TenantContext() context: NcContext,
     @Param('tableId') tableId: string,
     @Body() body: { order: number },
+    @Req() req: NcRequest,
   ) {
-    return this.tablesService.reorderTable({
+    return this.tablesService.reorderTable(context, {
       tableId,
       order: body.order,
+      req,
     });
   }
 }

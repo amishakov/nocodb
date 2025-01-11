@@ -1,6 +1,4 @@
 import type { TableType, ViewType } from 'nocodb-sdk'
-import { createEventHook, ref, useInjectionState } from '#imports'
-import type { Row } from '#imports'
 
 interface UseExpandedFormDetachedProps {
   'isOpen'?: boolean
@@ -13,11 +11,14 @@ interface UseExpandedFormDetachedProps {
   'view'?: ViewType
   'onCancel'?: Function
   'onUpdate:modelValue'?: Function
+  'maintainDefaultViewOrder'?: boolean
 }
 
 const [setup, use] = useInjectionState(() => {
   return ref<UseExpandedFormDetachedProps[]>([])
 })
+
+export { setup as useExpandedFormDetachedProvider }
 
 export function useExpandedFormDetached() {
   let states = use()!

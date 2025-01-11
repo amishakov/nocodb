@@ -1,13 +1,14 @@
-import { UITypes } from 'nocodb-sdk';
+import { isAIPromptCol, UITypes } from 'nocodb-sdk';
 import type { BaseModelSqlv2 } from '~/db/BaseModelSqlv2';
 import type { Knex } from 'knex';
-import type { FormulaColumn, RollupColumn } from '~/models';
+import type { ButtonColumn, FormulaColumn, RollupColumn } from '~/models';
+import { Base, BaseUser, Sort } from '~/models';
 import { NcError } from '~/helpers/catchError';
 import formulaQueryBuilderv2 from '~/db/formulav2/formulaQueryBuilderv2';
 import genRollupSelectv2 from '~/db/genRollupSelectv2';
 import { sanitize } from '~/helpers/sqlSanitize';
-import { Base, BaseUser, Sort } from '~/models';
 import generateLookupSelectQuery from '~/db/generateLookupSelectQuery';
+import { getRefColumnIfAlias } from '~/helpers';
 
 export default async function sortV2(
   baseModelSqlv2: BaseModelSqlv2,
@@ -17,6 +18,8 @@ export default async function sortV2(
   throwErrorIfInvalid = false,
 ) {
   const knex = baseModelSqlv2.dbDriver;
+
+  const context = baseModelSqlv2.context;
 
   if (!sortList?.length) {
     return;
@@ -29,14 +32,17 @@ export default async function sortV2(
     } else {
       sort = new Sort(_sort);
     }
-    const column = await sort.getColumn();
+    const column = await getRefColumnIfAlias(
+      context,
+      await sort.getColumn(context),
+    );
     if (!column) {
       if (throwErrorIfInvalid) {
-        NcError.unprocessableEntity(`Invalid field: ${sort.fk_column_id}`);
+        NcError.fieldNotFound(sort.fk_column_id);
       }
       continue;
     }
-    const model = await column.getModel();
+    const model = await column.getModel(context);
 
     const nulls = sort.direction === 'desc' ? 'LAST' : 'FIRST';
 
@@ -48,7 +54,9 @@ export default async function sortV2(
             await genRollupSelectv2({
               baseModelSqlv2,
               knex,
-              columnOptions: (await column.getColOptions()) as RollupColumn,
+              columnOptions: (await column.getColOptions(
+                context,
+              )) as RollupColumn,
               alias,
             })
           ).builder;
@@ -57,19 +65,47 @@ export default async function sortV2(
         }
         break;
       case UITypes.Formula:
+      case UITypes.Button:
         {
-          const builder = (
-            await formulaQueryBuilderv2(
-              baseModelSqlv2,
-              (
-                await column.getColOptions<FormulaColumn>()
-              ).formula,
-              alias,
-              model,
-              column,
-            )
-          ).builder;
-          qb.orderBy(builder, sort.direction || 'asc', nulls);
+          const formulaOptions = await column.getColOptions<
+            FormulaColumn | ButtonColumn
+          >(context);
+
+          if (
+            column.uidt === UITypes.Formula ||
+            (column.uidt === UITypes.Button &&
+              (formulaOptions as ButtonColumn).type === 'url')
+          ) {
+            const parsedTree = formulaOptions.getParsedTree();
+            // if static value order by a static number to avoid error
+            if (parsedTree?.type === 'Literal') {
+              qb.orderBy(
+                knex.raw('?', [1]) as any,
+                sort.direction || 'asc',
+                nulls,
+              );
+              break;
+            }
+            const builder = (
+              await formulaQueryBuilderv2(
+                baseModelSqlv2,
+                formulaOptions.formula,
+                null,
+                model,
+                column,
+                {},
+                alias,
+              )
+            ).builder;
+            qb.orderBy(builder, sort.direction || 'asc', nulls);
+          } else {
+            // The fk_webhook_id is a static value
+            qb.orderBy(
+              knex.raw('?', [1]) as any,
+              sort.direction || 'asc',
+              nulls,
+            );
+          }
         }
         break;
       case UITypes.Lookup:
@@ -138,9 +174,11 @@ export default async function sortV2(
         }
         break;
       }
-      case UITypes.User: {
-        const base = await Base.get(model.base_id);
-        const baseUsers = await BaseUser.getUsersList({
+      case UITypes.User:
+      case UITypes.CreatedBy:
+      case UITypes.LastModifiedBy: {
+        const base = await Base.get(context, model.base_id);
+        const baseUsers = await BaseUser.getUsersList(context, {
           base_id: base.id,
         });
 
@@ -159,6 +197,33 @@ export default async function sortV2(
           nulls,
         );
 
+        break;
+      }
+      case UITypes.LongText: {
+        if (isAIPromptCol(column)) {
+          let col;
+          if (knex.clientType() === 'pg') {
+            col = knex.raw(`TRIM('"' FROM (??::jsonb->>'value'))`, [
+              column.column_name,
+            ]);
+          } else if (knex.clientType().startsWith('mysql')) {
+            col = knex.raw(`JSON_UNQUOTE(JSON_EXTRACT(??, '$.value'))`, [
+              column.column_name,
+            ]);
+          } else if (knex.clientType() === 'sqlite3') {
+            col = knex.raw(`json_extract(??, '$.value')`, [column.column_name]);
+          } else if (knex.clientType() === 'mssql') {
+            col = knex.raw(`JSON_VALUE(??, '$.value')`, [column.column_name]);
+          }
+
+          qb.orderBy(col, sort.direction || 'asc', nulls);
+        } else {
+          qb.orderBy(
+            sanitize(column.column_name),
+            sort.direction || 'asc',
+            nulls,
+          );
+        }
         break;
       }
       default:

@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { useColumnCreateStoreOrThrow, useVModel } from '#imports'
-
 const props = defineProps<{
   value: any
 }>()
@@ -21,7 +19,7 @@ vModel.value.meta = {
 </script>
 
 <template>
-  <a-row class="my-2" gutter="8">
+  <a-row class="my-2" :gutter="8">
     <a-col :span="24">
       <a-form-item v-bind="validateInfos['meta.format']" :label="$t('labels.binaryEncodingFormat')">
         <a-select

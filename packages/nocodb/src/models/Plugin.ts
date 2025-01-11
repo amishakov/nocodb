@@ -2,7 +2,12 @@ import type { PluginType } from 'nocodb-sdk';
 import Noco from '~/Noco';
 import NocoCache from '~/cache/NocoCache';
 import { extractProps } from '~/helpers/extractProps';
-import { CacheGetType, CacheScope, MetaTable } from '~/utils/globals';
+import {
+  CacheGetType,
+  CacheScope,
+  MetaTable,
+  RootScopes,
+} from '~/utils/globals';
 
 export default class Plugin implements PluginType {
   id?: string;
@@ -36,7 +41,12 @@ export default class Plugin implements PluginType {
         CacheGetType.TYPE_OBJECT,
       ));
     if (!plugin) {
-      plugin = await ncMeta.metaGet2(null, null, MetaTable.PLUGIN, pluginId);
+      plugin = await ncMeta.metaGet2(
+        RootScopes.ROOT,
+        RootScopes.ROOT,
+        MetaTable.PLUGIN,
+        pluginId,
+      );
       await NocoCache.set(`${CacheScope.PLUGIN}:${pluginId}`, plugin);
     }
     return plugin && new Plugin(plugin);
@@ -47,7 +57,11 @@ export default class Plugin implements PluginType {
     let { list: pluginList } = cachedList;
     const { isNoneList } = cachedList;
     if (!isNoneList && !pluginList.length) {
-      pluginList = await ncMeta.metaList2(null, null, MetaTable.PLUGIN);
+      pluginList = await ncMeta.metaList2(
+        RootScopes.ROOT,
+        RootScopes.ROOT,
+        MetaTable.PLUGIN,
+      );
       await NocoCache.setList(CacheScope.PLUGIN, [], pluginList);
     }
     return pluginList;
@@ -65,48 +79,56 @@ export default class Plugin implements PluginType {
       updateObj.input = JSON.stringify(updateObj.input);
     }
 
-    // get existing cache
-    const key = `${CacheScope.PLUGIN}:${pluginId}`;
-    let o = await NocoCache.get(key, CacheGetType.TYPE_OBJECT);
-    // update alias
-    if (o) {
-      o = { ...o, ...updateObj };
-      // set cache
-      await NocoCache.set(key, o);
-      await NocoCache.set(`${CacheScope.PLUGIN}:${o.title}`, o);
-    }
     // set meta
     await Noco.ncMeta.metaUpdate(
-      null,
-      null,
+      RootScopes.ROOT,
+      RootScopes.ROOT,
       MetaTable.PLUGIN,
       updateObj,
       pluginId,
     );
 
+    await NocoCache.update(`${CacheScope.PLUGIN}:${pluginId}`, updateObj);
+
     return this.get(pluginId);
   }
 
-  public static async isPluginActive(title: string) {
-    return !!(await this.getPluginByTitle(title))?.active;
+  public static async isPluginActive(id: string, ncMeta = Noco.ncMeta) {
+    return !!(
+      (await this.getPlugin(id, ncMeta)) ||
+      (await this.getPluginByTitle(id, ncMeta))
+    )?.active;
   }
 
   /**
-   * get plugin by title
+   * get plugin by id
    */
-  public static async getPluginByTitle(title: string, ncMeta = Noco.ncMeta) {
+  public static async getPlugin(id: string, ncMeta = Noco.ncMeta) {
     let plugin =
-      title &&
+      id &&
       (await NocoCache.get(
-        `${CacheScope.PLUGIN}:${title}`,
+        `${CacheScope.PLUGIN}:${id}`,
         CacheGetType.TYPE_OBJECT,
       ));
     if (!plugin) {
-      plugin = await ncMeta.metaGet2(null, null, MetaTable.PLUGIN, {
-        title,
-      });
-      await NocoCache.set(`${CacheScope.PLUGIN}:${title}`, plugin);
+      plugin = await ncMeta.metaGet2(
+        RootScopes.ROOT,
+        RootScopes.ROOT,
+        MetaTable.PLUGIN,
+        id,
+      );
+      await NocoCache.set(`${CacheScope.PLUGIN}:${id}`, plugin);
     }
     return plugin;
+  }
+
+  // keeping it for backward compatibility, if someone configured google auth via plugin it still relies on this
+  static async getPluginByTitle(title: string, ncMeta = Noco.ncMeta) {
+    return await ncMeta.metaGet2(
+      RootScopes.ROOT,
+      RootScopes.ROOT,
+      MetaTable.PLUGIN,
+      { title },
+    );
   }
 }

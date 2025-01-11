@@ -52,28 +52,29 @@ export class OrgTokensService {
     });
 
     this.appHooksService.emit(AppEvents.ORG_API_TOKEN_CREATE, {
-      tokenBody: param.apiToken,
+      tokenTitle: apiToken.description,
       userId: param.user?.id,
-
+      tokenId: apiToken.id,
       req: param.req,
     });
 
     return apiToken;
   }
 
-  async apiTokenDelete(param: { user: User; token: string; req: NcRequest }) {
+  async apiTokenDelete(param: { user: User; tokenId: string; req: NcRequest }) {
     const fk_user_id = param.user.id;
-    const apiToken = await ApiToken.getByToken(param.token);
+    const apiToken = await ApiToken.get(param.tokenId);
     if (
       !extractRolesObj(param.user.roles)[OrgUserRoles.SUPER_ADMIN] &&
       apiToken.fk_user_id !== fk_user_id
     ) {
       NcError.notFound('Token not found');
     }
-    const res = await ApiToken.delete(param.token);
+    const res = await ApiToken.delete(param.tokenId);
 
     this.appHooksService.emit(AppEvents.ORG_API_TOKEN_DELETE, {
-      token: param.token,
+      tokenId: param.tokenId,
+      tokenTitle: apiToken.description,
       userId: param.user?.id,
       req: param['req'],
     });

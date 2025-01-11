@@ -149,17 +149,19 @@ const workerCount = [0, 0, 0, 0, 0, 0, 0, 0];
 export interface NcContext {
   base: BaseType;
   token: string;
+  apiToken: string;
   dbType?: string;
   workerId?: string;
   rootUser: UserType & { password: string };
   workspace: WorkspaceType;
   defaultProjectTitle: string;
   defaultTableTitle: string;
+  api: Api<any>;
 }
 
 selectors.setTestIdAttribute('data-testid');
 const sqliteFilePath = (workerId: string) => {
-  const rootDir = process.cwd();
+  const rootDir = `${__dirname}/..`;
   return `${rootDir}/../../packages/nocodb/test_sakila_${workerId}.db`;
 };
 
@@ -169,19 +171,23 @@ async function localInit({
   baseType = ProjectTypes.DATABASE,
   isSuperUser = false,
   dbType,
+  resetSsoClients = false,
+  resetPlugins,
 }: {
   workerId: string;
   isEmptyProject?: boolean;
   baseType?: ProjectTypes;
   isSuperUser?: boolean;
   dbType?: string;
+  resetSsoClients?: boolean;
+  resetPlugins?: boolean;
 }) {
   const parallelId = process.env.TEST_PARALLEL_INDEX;
 
   try {
     let response: AxiosResponse<any, any>;
     // Login as root user
-    if (isSuperUser && !isEE()) {
+    if (isSuperUser && process.env.NC_CLOUD !== 'true') {
       // required for configuring license key settings
       response = await axios.post('http://localhost:8080/api/v1/auth/user/signin', {
         email: `user@nocodb.com`,
@@ -203,11 +209,50 @@ async function localInit({
       },
     });
 
+    let apiToken = null;
+
+    const apiTokens = await api.orgTokens.list();
+
+    if (apiTokens.list.length > 0) {
+      apiToken = apiTokens.list[0].token;
+    } else {
+      const { token: createdToken } = await api.orgTokens.create({ description: 'test' });
+      apiToken = createdToken;
+    }
+
     // const workspaceTitle_old = `ws_pgExtREST${+workerId - 1}`;
     const workspaceTitle = `ws_pgExtREST${workerId}`;
     const baseTitle = `pgExtREST${workerId}`;
 
     // console.log(process.env.TEST_WORKER_INDEX, process.env.TEST_PARALLEL_INDEX);
+
+    // delete sso-clients
+    if (resetSsoClients && isEE() && api['ssoClient'] && isSuperUser) {
+      const clients = await api.ssoClient.list();
+      for (const client of clients.list) {
+        try {
+          await api.ssoClient.delete(client.id);
+        } catch (e) {
+          console.log(`Error deleting sso-client: ${client.id}`);
+        }
+      }
+    }
+
+    // if oss reset the plugins
+    if (!isEE() && resetPlugins) {
+      const plugins = (await api.plugin.list()).list ?? [];
+      for (const plugin of plugins) {
+        if (!plugin.input) continue;
+        try {
+          await api.plugin.update(plugin.id, {
+            input: null,
+            active: false,
+          });
+        } catch (e) {
+          console.log(`Error deleting plugin: ${plugin.id}`);
+        }
+      }
+    }
 
     if (isEE() && api['workspace']) {
       // Delete associated workspace
@@ -267,7 +312,7 @@ async function localInit({
         await fs.unlink(sqliteFilePath(parallelId));
       }
       if (!isEmptyProject) {
-        const testsDir = path.join(process.cwd(), '../../packages/nocodb/tests');
+        const testsDir = path.join(__dirname, '../../../packages/nocodb/tests');
         await fs.copyFile(`${testsDir}/sqlite-sakila-db/sakila.db`, sqliteFilePath(parallelId));
       }
     } else if (dbType === 'mysql') {
@@ -330,7 +375,7 @@ async function localInit({
 
     // get current user information
     const user = await api.auth.me();
-    return { data: { base, user, workspace, token }, status: 200 };
+    return { data: { base, user, workspace, token, api, apiToken }, status: 200 };
   } catch (e) {
     console.error(`Error resetting base: ${process.env.TEST_PARALLEL_INDEX}`, e);
     return { data: {}, status: 500 };
@@ -343,12 +388,16 @@ const setup = async ({
   isEmptyProject = false,
   isSuperUser = false,
   url,
+  resetSsoClients = false,
+  resetPlugins,
 }: {
   baseType?: ProjectTypes;
   page: Page;
   isEmptyProject?: boolean;
   isSuperUser?: boolean;
   url?: string;
+  resetSsoClients?: boolean;
+  resetPlugins?: boolean;
 }): Promise<NcContext> => {
   console.time('Setup');
 
@@ -372,6 +421,8 @@ const setup = async ({
       baseType,
       isSuperUser,
       dbType,
+      resetSsoClients,
+      resetPlugins,
     });
   } catch (e) {
     console.error(`Error resetting base: ${process.env.TEST_PARALLEL_INDEX}`, e);
@@ -398,9 +449,9 @@ const setup = async ({
     // ignore error: some roles will not have permission for license reset
     // console.error(`Error resetting base: ${process.env.TEST_PARALLEL_INDEX}`, e);
   }
-
   await page.addInitScript(
     async ({ token }) => {
+      if (location.search?.match(/code=|short-token=|skip-init-script=/)) return;
       try {
         let initialLocalStorage = {};
         try {
@@ -408,6 +459,9 @@ const setup = async ({
         } catch (e) {
           console.error('Failed to parse local storage', e);
         }
+
+        if (initialLocalStorage?.token) return;
+
         window.localStorage.setItem(
           'nocodb-gui-v2',
           JSON.stringify({
@@ -444,19 +498,25 @@ const setup = async ({
     baseUrl = url ? url : `/#/nc/${base.id}`;
   }
 
-  await page.goto(baseUrl, { waitUntil: 'networkidle' });
+  await page.addInitScript(() => (window.isPlaywright = true));
+
+  await page.goto(baseUrl, {
+    waitUntil: 'networkidle',
+  });
 
   console.timeEnd('Setup');
 
   return {
     base,
     token,
+    apiToken: response.data.apiToken,
     dbType,
     workerId,
     rootUser,
     workspace,
     defaultProjectTitle: 'Getting Started',
     defaultTableTitle: 'Features',
+    api: response?.data?.api,
   } as NcContext;
 };
 
@@ -466,7 +526,7 @@ export const unsetup = async (context: NcContext): Promise<void> => {};
 // packages/nocodb/src/lib/services/test/TestResetService/resetPgSakilaProject.ts
 
 const resetSakilaMysql = async (knex: Knex, parallelId: string, isEmptyProject: boolean) => {
-  const testsDir = path.join(process.cwd(), '/../../packages/nocodb/tests');
+  const testsDir = path.join(__dirname, '../../../packages/nocodb/tests');
 
   try {
     await knex.raw(`DROP DATABASE test_sakila_${parallelId}`);

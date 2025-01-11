@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { computed, extractSdkResponseErrorMsg, message, onMounted, useGlobal, useNuxtApp } from '#imports'
-
 const { $api } = useNuxtApp()
 
 const { currentVersion, latestRelease, hiddenRelease, appInfo } = useGlobal()
@@ -67,7 +65,7 @@ onMounted(async () => await fetchReleaseInfo())
 
           <nuxt-link
             no-prefetch
-            no-rel
+            rel="noopener"
             class="!text-primary !no-underline"
             to="https://docs.nocodb.com/getting-started/upgrading"
             target="_blank"

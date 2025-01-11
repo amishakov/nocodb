@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import type { ButtonType } from 'ant-design-vue/lib/button'
 import { useSlots } from 'vue'
-import type { NcButtonSize } from '~/lib'
+import type { GeneralLoaderProps } from '../general/Loader.vue'
 
 /**
  * @description
@@ -17,17 +17,31 @@ import type { NcButtonSize } from '~/lib'
 interface Props {
   loading?: boolean
   disabled?: boolean
+  showAsDisabled?: boolean
   type?: ButtonType | 'danger' | 'secondary' | undefined
   size?: NcButtonSize
+  loaderSize?: GeneralLoaderProps['size']
   centered?: boolean
+  fullWidth?: boolean
   iconOnly?: boolean
+  iconPosition?: 'left' | 'right'
+  theme?: 'default' | 'ai'
+  bordered?: boolean
+  shadow?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   disabled: false,
+  showAsDisabled: false,
   size: 'medium',
+  loaderSize: 'medium',
   type: 'primary',
+  fullWidth: false,
   centered: true,
+  iconPosition: 'left',
+  theme: 'default',
+  bordered: true,
+  shadow: true,
 })
 
 const emits = defineEmits(['update:loading'])
@@ -36,9 +50,7 @@ const slots = useSlots()
 
 const NcButton = ref<HTMLElement | null>(null)
 
-const size = computed(() => props.size)
-
-const type = computed(() => props.type)
+const { size, loaderSize, type, theme, bordered } = toRefs(props)
 
 const loading = useVModel(props, 'loading', emits)
 
@@ -73,50 +85,60 @@ useEventListener(NcButton, 'mousedown', () => {
 <template>
   <a-button
     ref="NcButton"
+    :class="{
+      'small': size === 'small',
+      'medium': size === 'medium',
+      'xsmall': size === 'xsmall',
+      'xxsmall': size === 'xxsmall',
+      'size-xs': size === 'xs',
+      'focused': isFocused,
+      'theme-default': theme === 'default',
+      'theme-ai': theme === 'ai',
+      'bordered': bordered,
+      'nc-btn-shadow': shadow,
+      'nc-show-as-disabled': props.showAsDisabled,
+    }"
     :disabled="props.disabled"
     :loading="loading"
+    :tabindex="props.disabled ? -1 : 0"
     :type="type"
     class="nc-button"
-    :class="{
-      small: size === 'small',
-      medium: size === 'medium',
-      xsmall: size === 'xsmall',
-      xxsmall: size === 'xxsmall',
-      focused: isFocused,
-    }"
-    :tabindex="props.disabled ? -1 : 0"
-    @focus="onFocus"
     @blur="onBlur"
+    @focus="onFocus"
   >
     <div
-      class="flex flex-row gap-x-2.5 w-full"
       :class="{
         'justify-center': props.centered,
         'justify-start': !props.centered,
       }"
+      class="flex flex-row gap-x-2.5 nc-btn-inner w-full"
     >
-      <GeneralLoader
-        v-if="loading"
-        size="medium"
-        class="flex !bg-inherit"
-        :class="{
-          '!text-white': type === 'primary' || type === 'danger',
-          '!text-gray-800': type !== 'primary' && type !== 'danger',
-        }"
-      />
+      <template v-if="iconPosition === 'left'">
+        <slot v-if="loading" name="loadingIcon">
+          <GeneralLoader class="flex !bg-inherit !text-inherit" :size="loaderSize" />
+        </slot>
 
-      <slot v-else name="icon" />
+        <slot v-else name="icon" />
+      </template>
       <div
         v-if="!(size === 'xxsmall' && loading) && !props.iconOnly"
-        class="flex flex-row items-center"
         :class="{
           'font-medium': type === 'primary' || type === 'danger',
+          'w-full': props.fullWidth,
         }"
+        class="flex flex-row items-center"
       >
         <slot v-if="loading && slots.loading" name="loading" />
 
         <slot v-else />
       </div>
+      <template v-if="iconPosition === 'right'">
+        <slot v-if="loading" name="loadingIcon">
+          <GeneralLoader class="flex !bg-inherit !text-inherit" :size="loaderSize" />
+        </slot>
+
+        <slot v-else name="icon" />
+      </template>
     </div>
   </a-button>
 </template>
@@ -137,19 +159,33 @@ useEventListener(NcButton, 'mousedown', () => {
 }
 
 .nc-button {
-  @apply !xs:(outline-none)
+  @apply !xs:(outline-none);
 
-  box-shadow: 0px 5px 3px -2px rgba(0, 0, 0, 0.02), 0px 3px 1px -2px rgba(0, 0, 0, 0.06);
+  &.nc-btn-shadow {
+    box-shadow: 0px 3px 1px -2px rgba(0, 0, 0, 0.06), 0px 5px 3px -2px rgba(0, 0, 0, 0.02);
+  }
   outline: none;
 }
 
 .desktop {
   .nc-button.ant-btn.focused {
-    box-shadow: 0px 0px 0px 2px #fff, 0px 0px 0px 4px #3069fe;
+    &.theme-default {
+      box-shadow: 0px 0px 0px 2px #fff, 0px 0px 0px 4px #3069fe;
+    }
+
+    &.theme-ai {
+      box-shadow: 0px 0px 0px 2px #fff, 0px 0px 0px 4px #7d26cd;
+    }
   }
 
   .nc-button.ant-btn-text.focused {
-    @apply text-brand-500;
+    &.theme-default {
+      @apply text-brand-500;
+    }
+
+    &.theme-ai {
+      @apply text-nc-content-purple-dark;
+    }
   }
 }
 
@@ -165,6 +201,13 @@ useEventListener(NcButton, 'mousedown', () => {
   @apply py-2 px-4 h-10 min-w-10 xs:(h-10.5 max-h-10.5 min-w-10.5 !px-3);
 }
 
+.nc-button.ant-btn.size-xs {
+  @apply px-2 py-0 h-7 min-w-7 rounded-lg text-small leading-[18px];
+
+  & > div {
+    @apply gap-x-2;
+  }
+}
 .nc-button.ant-btn.xsmall {
   @apply p-0.25 h-6.25 min-w-6.25 rounded-md;
 }
@@ -176,23 +219,100 @@ useEventListener(NcButton, 'mousedown', () => {
 .nc-button.ant-btn[disabled],
 .ant-btn-text.nc-button.ant-btn[disabled] {
   box-shadow: none !important;
-  @apply bg-gray-50 border-0 text-gray-300 cursor-not-allowed md:(hover:bg-gray-50);
+
+  @apply border-0 !cursor-not-allowed;
+
+  &.theme-default {
+    @apply bg-gray-50 text-gray-300 md:(hover:bg-gray-50);
+  }
+
+  &.theme-ai {
+    @apply bg-purple-50 text-purple-300 md:(hover:bg-purple-50);
+  }
 }
 
-.nc-button.ant-btn-text.ant-btn[disabled] {
-  @apply bg-transparent hover:bg-transparent;
+.nc-button.ant-btn.nc-show-as-disabled,
+.ant-btn-text.nc-button.ant-btn.nc-show-as-disabled {
+  box-shadow: none !important;
+
+  @apply border-0;
+
+  &.theme-default {
+    @apply bg-gray-50 text-gray-300 md:(hover:bg-gray-50);
+  }
+
+  &.theme-ai {
+    @apply bg-purple-50 text-purple-300 md:(hover:bg-purple-50);
+  }
 }
 
-.nc-button.ant-btn-secondary[disabled] {
-  @apply bg-white hover:bg-white border-1 border-gray-100 text-gray-300;
+.nc-button.ant-btn-text.ant-btn[disabled],
+.nc-button.ant-btn-text.ant-btn.nc-show-as-disabled {
+  &.theme-default,
+  &.theme-ai {
+    @apply bg-transparent hover:bg-transparent;
+  }
+}
+
+.nc-button.ant-btn-secondary[disabled],
+.nc-button.ant-btn-secondary.nc-show-as-disabled {
+  @apply border-1;
+
+  &:not(.bordered) {
+    @apply border-transparent;
+  }
+
+  &.theme-default {
+    @apply bg-white hover:bg-white border-gray-100 text-gray-300;
+
+    &.bordered {
+      @apply border-gray-100;
+    }
+  }
+
+  &.theme-ai {
+    @apply bg-purple-50 hover:bg-purple-50  text-purple-300;
+
+    &.bordered {
+      @apply border-purple-100;
+    }
+  }
 }
 
 .nc-button.ant-btn-primary {
-  @apply bg-brand-500 border-0 text-white xs:(hover:border-0) md:(hover:bg-brand-600);
+  @apply border-0 xs:(hover:border-0) text-white;
+
+  &.theme-default {
+    @apply bg-brand-500 md:(hover:bg-brand-600);
+  }
+
+  &.theme-ai {
+    @apply bg-purple-700 md:(hover:bg-purple-800);
+  }
 }
 
 .nc-button.ant-btn-secondary {
-  @apply bg-white border-1 border-gray-200 text-gray-700 md:(hover:bg-gray-100);
+  @apply border-1;
+
+  &:not(.bordered) {
+    @apply border-transparent;
+  }
+
+  &.theme-default {
+    @apply bg-white text-gray-700 md:(hover:bg-gray-100);
+
+    &.bordered {
+      @apply border-gray-200;
+    }
+  }
+
+  &.theme-ai {
+    @apply bg-purple-50  text-purple-700 md:(hover:bg-purple-100);
+
+    &.bordered {
+      @apply border-purple-200;
+    }
+  }
 }
 
 .nc-button.ant-btn-danger {
@@ -202,7 +322,15 @@ useEventListener(NcButton, 'mousedown', () => {
 .nc-button.ant-btn-text {
   box-shadow: none;
 
-  @apply bg-transparent border-0 text-gray-700 hover:text-gray-900 hover:bg-gray-100;
+  @apply bg-transparent border-0;
+
+  &.theme-default {
+    @apply text-gray-700 hover:text-gray-900 hover:bg-gray-100;
+  }
+
+  &.theme-ai {
+    @apply text-nc-content-purple-dark hover:text-nc-content-purple-dark hover:bg-nc-bg-purple-dark;
+  }
 
   &:focus {
     box-shadow: none;

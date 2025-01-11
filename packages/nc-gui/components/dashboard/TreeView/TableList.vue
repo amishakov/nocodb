@@ -3,7 +3,6 @@ import type { BaseType, TableType } from 'nocodb-sdk'
 import { storeToRefs } from 'pinia'
 import Sortable from 'sortablejs'
 import TableNode from './TableNode.vue'
-import { toRef, useNuxtApp } from '#imports'
 
 const props = withDefaults(
   defineProps<{
@@ -21,6 +20,8 @@ const sourceIndex = toRef(props, 'sourceIndex')
 const source = computed(() => base.value?.sources?.[sourceIndex.value])
 
 const { isMobileMode } = useGlobal()
+
+const { isUIAllowed } = useRoles()
 
 const { baseTables } = storeToRefs(useTablesStore())
 const tables = computed(() => baseTables.value.get(base.value.id!) ?? [])
@@ -114,7 +115,7 @@ const initSortable = (el: Element) => {
 }
 
 watchEffect(() => {
-  if (menuRefs.value) {
+  if (menuRefs.value && isUIAllowed('viewCreateOrEdit')) {
     if (menuRefs.value instanceof HTMLElement) {
       initSortable(menuRefs.value)
     } else {
@@ -135,8 +136,8 @@ const availableTables = computed(() => {
         v-if="availableTables.length === 0"
         class="py-0.5 text-gray-500"
         :class="{
-          'ml-13.55': sourceIndex === 0,
-          'ml-19.25': sourceIndex !== 0,
+          'ml-8.5': sourceIndex === 0,
+          'ml-14.5 xs:(ml-15.25)': sourceIndex !== 0,
         }"
       >
         {{ $t('general.empty') }}

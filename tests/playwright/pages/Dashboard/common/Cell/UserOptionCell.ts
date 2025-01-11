@@ -37,22 +37,24 @@ export class UserOptionCellPageObject extends BasePage {
 
     await selectCell.click();
 
+    await this.rootPage.locator('.nc-dropdown-user-select-cell').waitFor({ state: 'visible' });
+
     if (index === -1) {
       const selectOption = this.rootPage.getByTestId(`select-option-${columnHeader}-undefined`).getByText(option);
-      await selectOption.waitFor({ state: 'visible' });
+      await selectOption.scrollIntoViewIfNeeded();
       await selectOption.click();
     } else {
       const selectOption = this.rootPage.getByTestId(`select-option-${columnHeader}-${index}`).getByText(option);
-      await selectOption.waitFor({ state: 'visible' });
+      await selectOption.scrollIntoViewIfNeeded();
       await selectOption.click();
     }
 
-    if (multiSelect) await this.get({ index, columnHeader }).click();
+    if (multiSelect) {
+      // Press `Escape` to close the dropdown
+      await this.rootPage.keyboard.press('Escape');
+    }
 
-    await this.rootPage
-      .getByTestId(`select-option-${columnHeader}-${index}`)
-      .getByText(option)
-      .waitFor({ state: 'hidden' });
+    await this.rootPage.locator('.nc-dropdown-user-select-cell').waitFor({ state: 'hidden' });
   }
 
   async clear({ index, columnHeader, multiSelect }: { index: number; columnHeader: string; multiSelect?: boolean }) {
@@ -98,9 +100,8 @@ export class UserOptionCellPageObject extends BasePage {
     }
 
     const locator = this.cell.get({ index, columnHeader }).locator('.ant-tag');
-    await locator.waitFor({ state: 'visible' });
-    const text = await locator.allInnerTexts();
-    return expect(text).toContain(option);
+    await expect(locator).toBeVisible();
+    return expect(locator).toContainText(option);
   }
 
   async verifyNoOptionsSelected({ index, columnHeader }: { index: number; columnHeader: string }) {
@@ -132,7 +133,7 @@ export class UserOptionCellPageObject extends BasePage {
 
     let counter = 0;
     for (const option of options) {
-      await expect(this.rootPage.locator(`div.ant-select-item-option`).nth(counter)).toHaveText(option);
+      await expect(this.rootPage.locator(`div.ant-select-item-option`).nth(counter)).toContainText(option);
       counter++;
     }
     await this.rootPage.keyboard.press('Escape');
@@ -153,7 +154,7 @@ export class UserOptionCellPageObject extends BasePage {
 
     let counter = 0;
     for (const option of options) {
-      await expect(selectCell.locator(`.nc-selected-option`).nth(counter)).toHaveText(option);
+      await expect(selectCell.locator(`.nc-selected-option`).nth(counter)).toContainText(option);
       counter++;
     }
   }

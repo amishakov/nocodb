@@ -1,28 +1,21 @@
 <script lang="ts" setup>
 import type { ViewType } from 'nocodb-sdk'
-import { ViewTypes } from 'nocodb-sdk'
+import { ViewTypes, viewTypeAlias } from 'nocodb-sdk'
 import type { SortableEvent } from 'sortablejs'
 import Sortable from 'sortablejs'
 import type { Menu as AntMenu } from 'ant-design-vue'
-import {
-  extractSdkResponseErrorMsg,
-  isDefaultBase,
-  message,
-  onMounted,
-  parseProp,
-  ref,
-  resolveComponent,
-  useApi,
-  useCommandPalette,
-  useDialog,
-  useNuxtApp,
-  useUndoRedo,
-  viewTypeAlias,
-  watch,
-} from '#imports'
 
 interface Emits {
-  (event: 'openModal', data: { type: ViewTypes; title?: string; copyViewId?: string; groupingFieldColumnId?: string }): void
+  (
+    event: 'openModal',
+    data: {
+      type: ViewTypes
+      title?: string
+      copyViewId?: string
+      groupingFieldColumnId?: string
+      coverImageColumnId?: string
+    },
+  ): void
 
   (event: 'deleted'): void
 }
@@ -38,6 +31,8 @@ const { activeTableId } = storeToRefs(useTablesStore())
 const { isUIAllowed } = useRoles()
 
 const { isMobileMode } = useGlobal()
+
+const { isSharedBase } = storeToRefs(useBase())
 
 const { $e } = useNuxtApp()
 
@@ -82,11 +77,14 @@ function markItem(id: string) {
   }, 300)
 }
 
-const isDefaultSource = computed(() => {
-  const source = base.value?.sources?.find((b) => b.id === table.value.source_id)
-  if (!source) return false
+const source = computed(() => base.value?.sources?.find((b) => b.id === table.value.source_id))
 
-  return isDefaultBase(source)
+const isDefaultSource = computed(() => {
+  if (base.value?.sources?.length === 1) return true
+
+  if (!source.value) return false
+
+  return isDefaultBase(source.value)
 })
 
 /** validate view title */
@@ -119,7 +117,10 @@ async function onSortEnd(evt: SortableEvent, undo = false) {
 
   if (views.value.length < 2) return
 
-  const { newIndex = 0, oldIndex = 0 } = evt
+  let { newIndex = 0, oldIndex = 0 } = evt
+
+  newIndex = newIndex - 1
+  oldIndex = oldIndex - 1
 
   if (newIndex === oldIndex) return
 
@@ -149,7 +150,10 @@ async function onSortEnd(evt: SortableEvent, undo = false) {
     })
   }
 
-  const children = evt.to.children as unknown as HTMLLIElement[]
+  const children = Array.from(evt.to.children as unknown as HTMLLIElement[])
+
+  // remove `Create View` children from list
+  children.shift()
 
   const previousEl = children[newIndex - 1]
   const nextEl = children[newIndex + 1]
@@ -158,7 +162,8 @@ async function onSortEnd(evt: SortableEvent, undo = false) {
 
   if (!currentItem || !currentItem.id) return
 
-  const previousItem = (previousEl ? views.value.find((v) => v.id === previousEl.id) : {}) as ViewType
+  // set default order value as 0 if item not found
+  const previousItem = (previousEl ? views.value.find((v) => v.id === previousEl.id) ?? { order: 0 } : { order: 0 }) as ViewType
   const nextItem = (nextEl ? views.value.find((v) => v.id === nextEl.id) : {}) as ViewType
 
   let nextOrder: number
@@ -195,7 +200,7 @@ const initSortable = (el: HTMLElement) => {
   })
 }
 
-onMounted(() => menuRef.value && initSortable(menuRef.value.$el))
+onMounted(() => menuRef.value && isUIAllowed('viewCreateOrEdit') && initSortable(menuRef.value.$el))
 
 /** Navigate to view by changing url param */
 async function changeView(view: ViewType) {
@@ -278,7 +283,11 @@ function openDeleteDialog(view: ViewType) {
 
       emits('deleted')
 
-      removeFromRecentViews({ viewId: view.id, tableId: view.fk_model_id, baseId: base.value.id })
+      removeFromRecentViews({
+        viewId: view.id,
+        tableId: view.fk_model_id,
+        baseId: base.value.id,
+      })
       refreshCommandPalette()
       if (activeView.value?.id === view.id) {
         navigateToTable({
@@ -331,11 +340,18 @@ function onOpenModal({
   type,
   copyViewId,
   groupingFieldColumnId,
+  calendarRange,
+  coverImageColumnId,
 }: {
   title?: string
   type: ViewTypes
   copyViewId?: string
   groupingFieldColumnId?: string
+  calendarRange?: Array<{
+    fk_from_column_id: string
+    fk_to_column_id: string | null // for ee only
+  }>
+  coverImageColumnId?: string
 }) {
   const isOpen = ref(true)
 
@@ -347,8 +363,11 @@ function onOpenModal({
     'selectedViewId': copyViewId,
     groupingFieldColumnId,
     'views': views,
+    calendarRange,
+    coverImageColumnId,
+    'baseId': base.value.id,
     'onUpdate:modelValue': closeDialog,
-    'onCreated': async (view: ViewType) => {
+    'onCreated': async (view?: ViewType) => {
       closeDialog()
 
       refreshCommandPalette()
@@ -358,14 +377,16 @@ function onOpenModal({
         tableId: table.value.id!,
       })
 
-      navigateToView({
-        view,
-        tableId: table.value.id!,
-        baseId: base.value.id!,
-        hardReload: view.type === ViewTypes.FORM && selected.value[0] === view.id,
-      })
+      if (view) {
+        navigateToView({
+          view,
+          tableId: table.value.id!,
+          baseId: base.value.id!,
+          hardReload: view.type === ViewTypes.FORM && selected.value[0] === view.id,
+        })
+      }
 
-      $e('a:view:create', { view: view.type })
+      $e('a:view:create', { view: view?.type || type })
     },
   })
 
@@ -381,57 +402,59 @@ function onOpenModal({
   <a-menu
     ref="menuRef"
     :class="{ dragging }"
-    class="nc-views-menu flex flex-col w-full !border-r-0 !bg-inherit"
     :selected-keys="selected"
+    class="nc-views-menu flex flex-col w-full !border-r-0 !bg-inherit"
   >
-    <DashboardTreeViewCreateViewBtn
-      v-if="isUIAllowed('viewCreateOrEdit')"
-      :class="{
-        '!pl-18 !xs:(pl-19.75)': isDefaultSource,
-        '!pl-23.5 !xs:(pl-27)': !isDefaultSource,
-      }"
-      :align-left-level="isDefaultSource ? 1 : 2"
-    >
-      <div
-        role="button"
-        class="nc-create-view-btn flex flex-row items-center cursor-pointer rounded-md w-full"
+    <template v-if="!isSharedBase">
+      <DashboardTreeViewCreateViewBtn
+        v-if="isUIAllowed('viewCreateOrEdit')"
+        :align-left-level="isDefaultSource ? 1 : 2"
         :class="{
-          'text-brand-500 hover:text-brand-600': activeTableId === table.id,
-          'text-gray-500 hover:text-brand-500': activeTableId !== table.id,
+          '!pl-13.3 !xs:(pl-13.5)': isDefaultSource,
+          '!pl-18.6 !xs:(pl-20)': !isDefaultSource,
         }"
+        :source="source"
       >
-        <div class="flex flex-row items-center pl-1.25 !py-1.5 text-inherit">
-          <GeneralIcon icon="plus" />
-          <div class="pl-1.75">
-            {{
-              $t('general.createEntity', {
-                entity: $t('objects.view'),
-              })
-            }}
+        <div
+          :class="{
+            'text-brand-500 hover:text-brand-600': activeTableId === table.id,
+            'text-gray-500 hover:text-brand-500': activeTableId !== table.id,
+          }"
+          class="nc-create-view-btn flex flex-row items-center cursor-pointer rounded-md w-full"
+          role="button"
+        >
+          <div class="flex flex-row items-center pl-1.25 !py-1.5 text-inherit">
+            <GeneralIcon icon="plus" />
+            <div class="pl-1.75">
+              {{
+                $t('general.createEntity', {
+                  entity: $t('objects.view'),
+                })
+              }}
+            </div>
           </div>
         </div>
-      </div>
-    </DashboardTreeViewCreateViewBtn>
-
+      </DashboardTreeViewCreateViewBtn>
+    </template>
     <template v-if="views.length">
       <DashboardTreeViewViewsNode
         v-for="view of views"
         :id="view.id"
         :key="view.id"
-        :view="view"
-        :on-validate="validate"
-        :table="table"
-        class="nc-view-item !rounded-md !px-0.75 !py-0.5 w-full transition-all ease-in duration-100"
         :class="{
           'bg-gray-200': isMarked === view.id,
           'active': activeView?.id === view.id,
           [`nc-${view.type ? viewTypeAlias[view.type] : undefined || view.type}-view-item`]: true,
         }"
         :data-view-id="view.id"
-        @change-view="changeView"
-        @open-modal="onOpenModal"
+        :on-validate="validate"
+        :table="table"
+        :view="view"
+        class="nc-view-item !rounded-md !px-0.75 !py-0.5 w-full transition-all ease-in duration-100"
         @delete="openDeleteDialog"
         @rename="onRename"
+        @change-view="changeView"
+        @open-modal="onOpenModal"
         @select-icon="setIcon($event, view)"
       />
     </template>

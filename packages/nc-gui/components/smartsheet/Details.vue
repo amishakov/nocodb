@@ -56,30 +56,30 @@ watch(openedSubTab, () => {
       <a-tab-pane v-if="isUIAllowed('fieldAdd')" key="field">
         <template #tab>
           <div class="tab" data-testid="nc-fields-tab">
-            <GeneralIcon icon="list" class="tab-icon" :class="{}" />
-            <div>Fields</div>
+            <GeneralIcon icon="ncList" class="tab-icon" :class="{}" />
+            <div>{{ $t('objects.fields') }}</div>
           </div>
         </template>
-        <SmartsheetDetailsFields />
+        <LazySmartsheetDetailsFields />
       </a-tab-pane>
       <a-tab-pane key="relation">
         <template #tab>
           <div class="tab" data-testid="nc-relations-tab">
-            <GeneralIcon icon="erd" class="tab-icon" :class="{}" />
+            <GeneralIcon icon="ncErd" class="tab-icon" :class="{}" />
             <div>{{ $t('title.relations') }}</div>
           </div>
         </template>
-        <SmartsheetDetailsErd />
+        <LazySmartsheetDetailsErd />
       </a-tab-pane>
 
       <a-tab-pane key="api">
         <template #tab>
           <div class="tab" data-testid="nc-apis-tab">
-            <GeneralIcon icon="code" class="tab-icon" :class="{}" />
-            <div>{{ $t('labels.apis') }}</div>
+            <GeneralIcon icon="ncCode" class="tab-icon" :class="{}" />
+            <div>{{ $t('labels.apiSnippet') }}</div>
           </div>
         </template>
-        <SmartsheetDetailsApi v-if="base && meta && view" />
+        <LazySmartsheetDetailsApi v-if="base && meta && view" />
         <div v-else class="h-full w-full flex flex-col justify-center items-center mt-28 mb-4">
           <a-spin size="large" :indicator="indicator" />
         </div>
@@ -88,11 +88,11 @@ watch(openedSubTab, () => {
       <a-tab-pane v-if="isUIAllowed('hookList')" key="webhook">
         <template #tab>
           <div class="tab" data-testid="nc-webhooks-tab">
-            <GeneralIcon icon="webhook" class="tab-icon" :class="{}" />
+            <GeneralIcon icon="ncWebhook" class="tab-icon" :class="{}" />
             <div>{{ $t('objects.webhooks') }}</div>
           </div>
         </template>
-        <SmartsheetDetailsWebhooks />
+        <LazySmartsheetDetailsWebhooks />
       </a-tab-pane>
     </NcTabs>
   </div>
@@ -103,24 +103,30 @@ watch(openedSubTab, () => {
   @apply flex flex-row items-center gap-x-1.5 pr-0.5;
 }
 
-:deep(.ant-tabs-nav) {
-  min-height: calc(var(--topbar-height) - 1.75px);
+:deep(.nc-details-tab > .ant-tabs-nav:first-of-type) {
+  min-height: calc(var(--toolbar-height) - 1px);
+
+  .ant-tabs-tab {
+    @apply pt-3 pb-3 text-small leading-[18px];
+  }
 }
 </style>
 
 <style lang="scss">
 .nc-details-tab.nc-tabs.centered {
   > .ant-tabs-nav {
+    @apply px-3;
     .ant-tabs-nav-wrap {
-      @apply absolute mx-auto -left-9.5;
+      @apply absolute mx-auto;
     }
   }
 }
 
 .nc-details-tab-left-sidebar-close > .nc-details-tab.nc-tabs.centered {
   > .ant-tabs-nav {
+    @apply px-3;
     .ant-tabs-nav-wrap {
-      @apply absolute mx-auto left-0;
+      @apply absolute mx-auto;
     }
   }
 }

@@ -1,7 +1,8 @@
 import RedisCacheMgr from './RedisCacheMgr';
 import RedisMockCacheMgr from './RedisMockCacheMgr';
 import type CacheMgr from './CacheMgr';
-import { CacheGetType } from '~/utils/globals';
+import { CACHE_PREFIX, CacheGetType } from '~/utils/globals';
+import { getRedisURL } from '~/helpers/redisHelpers';
 
 export default class NocoCache {
   private static client: CacheMgr;
@@ -13,15 +14,24 @@ export default class NocoCache {
     if (this.cacheDisabled) {
       return;
     }
-    if (process.env.NC_REDIS_URL) {
-      this.client = new RedisCacheMgr(process.env.NC_REDIS_URL);
+    if (getRedisURL()) {
+      this.client = new RedisCacheMgr(getRedisURL());
     } else {
       this.client = new RedisMockCacheMgr();
     }
 
     // TODO(cache): fetch orgs once it's implemented
     const orgs = 'noco';
-    this.prefix = `nc:${orgs}`;
+    this.prefix = `${CACHE_PREFIX}:${orgs}`;
+  }
+
+  public static disableCache() {
+    this.cacheDisabled = true;
+  }
+
+  public static enableCache() {
+    // return to default value
+    this.cacheDisabled = (process.env.NC_DISABLE_CACHE || false) === 'true';
   }
 
   public static async set(key, value): Promise<boolean> {
@@ -52,24 +62,21 @@ export default class NocoCache {
     return this.client.get(`${this.prefix}:${key}`, type);
   }
 
-  public static async getAll(pattern: string): Promise<any[]> {
-    if (this.cacheDisabled) return Promise.resolve([]);
-    return this.client.getAll(`${this.prefix}:${pattern}`);
-  }
-
   public static async del(key): Promise<boolean> {
     if (this.cacheDisabled) return Promise.resolve(true);
+    if (Array.isArray(key))
+      return this.client.del(key.map((k) => `${this.prefix}:${k}`));
     return this.client.del(`${this.prefix}:${key}`);
-  }
-
-  public static async delAll(scope: string, pattern: string): Promise<any[]> {
-    if (this.cacheDisabled) return Promise.resolve([]);
-    return this.client.delAll(scope, pattern);
   }
 
   public static async getList(
     scope: string,
     subKeys: string[],
+    orderBy?: {
+      key: string;
+      dir?: 'asc' | 'desc';
+      isString?: boolean;
+    },
   ): Promise<{
     list: any[];
     isNoneList: boolean;
@@ -79,7 +86,7 @@ export default class NocoCache {
         list: [],
         isNoneList: false,
       });
-    return this.client.getList(scope, subKeys);
+    return this.client.getList(scope, subKeys, orderBy);
   }
 
   public static async setList(
@@ -93,12 +100,11 @@ export default class NocoCache {
   }
 
   public static async deepDel(
-    scope: string,
     key: string,
     direction: string,
   ): Promise<boolean> {
     if (this.cacheDisabled) return Promise.resolve(true);
-    return this.client.deepDel(scope, key, direction);
+    return this.client.deepDel(`${this.prefix}:${key}`, direction);
   }
 
   public static async appendToList(
@@ -113,6 +119,14 @@ export default class NocoCache {
       subListKeys,
       `${this.prefix}:${key}`,
     );
+  }
+
+  public static async update(
+    key: string,
+    updateObj: Record<string, any>,
+  ): Promise<boolean> {
+    if (this.cacheDisabled) return Promise.resolve(true);
+    return this.client.update(`${this.prefix}:${key}`, updateObj);
   }
 
   public static async destroy(): Promise<boolean> {
