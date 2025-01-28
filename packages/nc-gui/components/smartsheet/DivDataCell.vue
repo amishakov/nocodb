@@ -1,7 +1,9 @@
 <script lang="ts" setup>
-import { CurrentCellInj, ref } from '#imports'
-
 const el = ref()
+
+const cellClickHook = createEventHook()
+
+provide(OnDivDataCellEventHookInj, cellClickHook)
 
 provide(CurrentCellInj, el)
 
@@ -28,7 +30,7 @@ const onTabPress = () => {
 </script>
 
 <template>
-  <div ref="el" class="select-none nc-data-cell" @keydown.tab="onTabPress">
+  <div ref="el" class="select-none nc-data-cell" @keydown.tab="onTabPress" @click="cellClickHook.trigger($event)">
     <slot />
   </div>
 </template>

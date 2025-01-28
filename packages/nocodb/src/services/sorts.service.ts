@@ -1,73 +1,110 @@
 import { Injectable } from '@nestjs/common';
 import { AppEvents } from 'nocodb-sdk';
 import type { SortReqType } from 'nocodb-sdk';
-import type { NcRequest } from '~/interface/config';
+import type { NcContext, NcRequest } from '~/interface/config';
 import { AppHooksService } from '~/services/app-hooks/app-hooks.service';
 import { validatePayload } from '~/helpers';
 import { NcError } from '~/helpers/catchError';
-import { Sort } from '~/models';
+import { Column, Sort, View } from '~/models';
 
 @Injectable()
 export class SortsService {
   constructor(protected readonly appHooksService: AppHooksService) {}
 
-  async sortGet(param: { sortId: string }) {
-    return Sort.get(param.sortId);
+  async sortGet(context: NcContext, param: { sortId: string }) {
+    return Sort.get(context, param.sortId);
   }
 
-  async sortDelete(param: { sortId: string; req: NcRequest }) {
-    const sort = await Sort.get(param.sortId);
+  async sortDelete(
+    context: NcContext,
+    param: { sortId: string; req: NcRequest },
+  ) {
+    const sort = await Sort.get(context, param.sortId);
 
     if (!sort) {
       NcError.badRequest('Sort not found');
     }
 
-    await Sort.delete(param.sortId);
+    const column = await Column.get(context, { colId: sort.fk_column_id });
 
-    this.appHooksService.emit(AppEvents.SORT_CREATE, {
+    const view = await View.get(context, sort.fk_view_id);
+
+    await Sort.delete(context, param.sortId);
+
+    this.appHooksService.emit(AppEvents.SORT_DELETE, {
       sort,
       req: param.req,
+      view,
+      column,
+      context,
     });
     return true;
   }
 
-  async sortUpdate(param: { sortId: any; sort: SortReqType; req: NcRequest }) {
+  async sortUpdate(
+    context: NcContext,
+    param: { sortId: any; sort: SortReqType; req: NcRequest },
+  ) {
     validatePayload('swagger.json#/components/schemas/SortReq', param.sort);
 
-    const sort = await Sort.get(param.sortId);
+    const sort = await Sort.get(context, param.sortId);
 
     if (!sort) {
       NcError.badRequest('Sort not found');
     }
 
-    const res = await Sort.update(param.sortId, param.sort);
+    const column = await Column.get(context, { colId: sort.fk_column_id });
+
+    const view = await View.get(context, sort.fk_view_id);
+
+    const res = await Sort.update(context, param.sortId, param.sort);
 
     this.appHooksService.emit(AppEvents.SORT_UPDATE, {
-      sort,
-
+      sort: {
+        ...sort,
+        ...param.sort,
+      },
+      oldSort: sort,
+      column,
+      view,
       req: param.req,
+      context,
     });
 
     return res;
   }
 
-  async sortCreate(param: { viewId: any; sort: SortReqType; req: NcRequest }) {
+  async sortCreate(
+    context: NcContext,
+    param: { viewId: string; sort: SortReqType; req: NcRequest },
+  ) {
     validatePayload('swagger.json#/components/schemas/SortReq', param.sort);
 
-    const sort = await Sort.insert({
+    const sort = await Sort.insert(context, {
       ...param.sort,
       fk_view_id: param.viewId,
     } as Sort);
 
+    const view = await View.get(context, param.viewId);
+
+    if (!view) {
+      NcError.badRequest('View not found');
+    }
+
+    const column = await Column.get(context, { colId: sort.fk_column_id });
+
     this.appHooksService.emit(AppEvents.SORT_CREATE, {
       sort,
+      view,
+      column,
       req: param.req,
+      context,
     });
 
     return sort;
   }
 
-  async sortList(param: { viewId: string }) {
-    return Sort.list({ viewId: param.viewId });
+  async sortList(context: NcContext, param: { viewId: string }) {
+    return Sort.list(context, { viewId: param.viewId });
   }
 }

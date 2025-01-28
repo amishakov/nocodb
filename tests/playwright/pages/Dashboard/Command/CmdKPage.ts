@@ -14,12 +14,12 @@ export class CmdK extends BasePage {
   }
 
   async openCmdK() {
-    await this.dashboardPage.rootPage.keyboard.press(this.isMacOs() ? 'Meta+K' : 'Control+K');
-    // await this.dashboardPage.rootPage.waitForSelector('.DocSearch-Input');
+    await this.dashboardPage.rootPage.keyboard.press((await this.isMacOs()) ? 'Meta+K' : 'Control+K');
   }
 
   async searchText(text: string) {
     await this.dashboardPage.rootPage.fill('.cmdk-input', text);
+    await this.dashboardPage.rootPage.waitForTimeout(1000);
     await this.rootPage.keyboard.press('Enter');
     await this.rootPage.keyboard.press('Enter');
   }

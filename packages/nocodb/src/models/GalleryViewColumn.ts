@@ -1,4 +1,5 @@
 import type { BoolType } from 'nocodb-sdk';
+import type { NcContext } from '~/interface/config';
 import View from '~/models/View';
 import Noco from '~/Noco';
 import NocoCache from '~/cache/NocoCache';
@@ -13,6 +14,7 @@ export default class GalleryViewColumn {
 
   fk_view_id: string;
   fk_column_id: string;
+  fk_workspace_id?: string;
   base_id?: string;
   source_id?: string;
 
@@ -20,28 +22,35 @@ export default class GalleryViewColumn {
     Object.assign(this, data);
   }
 
-  public static async get(galleryViewColumnId: string, ncMeta = Noco.ncMeta) {
-    let view =
+  public static async get(
+    context: NcContext,
+    galleryViewColumnId: string,
+    ncMeta = Noco.ncMeta,
+  ) {
+    let viewColumn =
       galleryViewColumnId &&
       (await NocoCache.get(
         `${CacheScope.GALLERY_VIEW_COLUMN}:${galleryViewColumnId}`,
         CacheGetType.TYPE_OBJECT,
       ));
-    if (!view) {
-      view = await ncMeta.metaGet2(
-        null,
-        null,
+    if (!viewColumn) {
+      viewColumn = await ncMeta.metaGet2(
+        context.workspace_id,
+        context.base_id,
         MetaTable.GALLERY_VIEW_COLUMNS,
         galleryViewColumnId,
       );
-      await NocoCache.set(
-        `${CacheScope.GALLERY_VIEW_COLUMN}:${galleryViewColumnId}`,
-        view,
-      );
+      if (viewColumn) {
+        await NocoCache.set(
+          `${CacheScope.GALLERY_VIEW_COLUMN}:${galleryViewColumnId}`,
+          viewColumn,
+        );
+      }
     }
-    return view && new GalleryViewColumn(view);
+    return viewColumn && new GalleryViewColumn(viewColumn);
   }
   static async insert(
+    context: NcContext,
     column: Partial<GalleryViewColumn>,
     ncMeta = Noco.ncMeta,
   ) {
@@ -60,49 +69,41 @@ export default class GalleryViewColumn {
       },
     );
 
-    if (!(column.base_id && column.source_id)) {
-      const viewRef = await View.get(column.fk_view_id, ncMeta);
-      insertObj.base_id = viewRef.base_id;
+    if (!insertObj.source_id) {
+      const viewRef = await View.get(context, insertObj.fk_view_id, ncMeta);
       insertObj.source_id = viewRef.source_id;
     }
 
-    const { id, fk_column_id } = await ncMeta.metaInsert2(
-      null,
-      null,
+    const { id } = await ncMeta.metaInsert2(
+      context.workspace_id,
+      context.base_id,
       MetaTable.GALLERY_VIEW_COLUMNS,
       insertObj,
     );
 
-    await NocoCache.set(
-      `${CacheScope.GALLERY_VIEW_COLUMN}:${fk_column_id}`,
-      id,
-    );
+    // on new view column, delete any optimised single query cache
+    {
+      const view = await View.get(context, column.fk_view_id, ncMeta);
+      await View.clearSingleQueryCache(
+        context,
+        view.fk_model_id,
+        [view],
+        ncMeta,
+      );
+    }
 
-    // if cache is not present skip pushing it into the list to avoid unexpected behaviour
-    const { list } = await NocoCache.getList(CacheScope.GALLERY_VIEW_COLUMN, [
-      column.fk_view_id,
-    ]);
-
-    if (list?.length)
+    return this.get(context, id, ncMeta).then(async (viewColumn) => {
       await NocoCache.appendToList(
         CacheScope.GALLERY_VIEW_COLUMN,
         [column.fk_view_id],
         `${CacheScope.GALLERY_VIEW_COLUMN}:${id}`,
       );
-
-    // on new view column, delete any optimised single query cache
-    {
-      const view = await View.get(column.fk_view_id, ncMeta);
-      await NocoCache.delAll(
-        CacheScope.SINGLE_QUERY,
-        `${view.fk_model_id}:${view.id}:*`,
-      );
-    }
-
-    return this.get(id, ncMeta);
+      return viewColumn;
+    });
   }
 
   public static async list(
+    context: NcContext,
     viewId: string,
     ncMeta = Noco.ncMeta,
   ): Promise<GalleryViewColumn[]> {
@@ -113,8 +114,8 @@ export default class GalleryViewColumn {
     const { isNoneList } = cachedList;
     if (!isNoneList && !views.length) {
       views = await ncMeta.metaList2(
-        null,
-        null,
+        context.workspace_id,
+        context.base_id,
         MetaTable.GALLERY_VIEW_COLUMNS,
         {
           condition: {
@@ -133,5 +134,36 @@ export default class GalleryViewColumn {
         (b.order != null ? b.order : Infinity),
     );
     return views?.map((v) => new GalleryViewColumn(v));
+  }
+
+  static async update(
+    context: NcContext,
+    columnId: string,
+    body: Partial<GalleryViewColumn>,
+    ncMeta = Noco.ncMeta,
+  ) {
+    const updateObj = extractProps(body, ['order', 'show']);
+
+    // set meta
+    const res = await ncMeta.metaUpdate(
+      context.workspace_id,
+      context.base_id,
+      MetaTable.GALLERY_VIEW_COLUMNS,
+      updateObj,
+      columnId,
+    );
+
+    // get existing cache
+    const key = `${CacheScope.GALLERY_VIEW_COLUMN}:${columnId}`;
+    await NocoCache.update(key, updateObj);
+
+    // on view column update, delete any optimised single query cache
+    {
+      const viewCol = await this.get(context, columnId, ncMeta);
+      const view = await View.get(context, viewCol.fk_view_id, ncMeta);
+      await View.clearSingleQueryCache(context, view.fk_model_id, [view]);
+    }
+
+    return res;
   }
 }

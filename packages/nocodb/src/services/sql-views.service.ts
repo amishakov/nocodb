@@ -1,37 +1,37 @@
 import { Injectable } from '@nestjs/common';
-import {
-  AuditOperationSubTypes,
-  AuditOperationTypes,
-  ModelTypes,
-} from 'nocodb-sdk';
+import { ModelTypes } from 'nocodb-sdk';
 import DOMPurify from 'isomorphic-dompurify';
 import type { UserType } from 'nocodb-sdk';
+import type { NcContext } from '~/interface/config';
 import { NcError } from '~/helpers/catchError';
 import getTableNameAlias, { getColumnNameAlias } from '~/helpers/getTableName';
 import ProjectMgrv2 from '~/db/sql-mgr/v2/ProjectMgrv2';
 import mapDefaultDisplayValue from '~/helpers/mapDefaultDisplayValue';
 import getColumnUiType from '~/helpers/getColumnUiType';
 import NcConnectionMgrv2 from '~/utils/common/NcConnectionMgrv2';
-import { Audit, Base, Column, Model } from '~/models';
+import { Base, Column, Model } from '~/models';
 
 @Injectable()
 export class SqlViewsService {
-  async sqlViewCreate(param: {
-    clientIp: string;
-    baseId: string;
-    sourceId: string;
-    body: {
-      view_name: string;
-      title: string;
-      view_definition?: string;
-    };
-    user: UserType;
-  }) {
+  async sqlViewCreate(
+    context: NcContext,
+    param: {
+      clientIp: string;
+      baseId: string;
+      sourceId: string;
+      body: {
+        view_name: string;
+        title: string;
+        view_definition?: string;
+      };
+      user: UserType;
+    },
+  ) {
     NcError.notImplemented();
     return;
     const body = { ...param.body };
 
-    const base = await Base.getWithInfo(param.baseId);
+    const base = await Base.getWithInfo(context, param.baseId);
     let source = base.sources[0];
 
     if (param.sourceId) {
@@ -60,7 +60,7 @@ export class SqlViewsService {
     }
 
     if (
-      !(await Model.checkTitleAvailable({
+      !(await Model.checkTitleAvailable(context, {
         table_name: body.view_name,
         base_id: base.id,
         source_id: source.id,
@@ -74,7 +74,7 @@ export class SqlViewsService {
     }
 
     if (
-      !(await Model.checkAliasAvailable({
+      !(await Model.checkAliasAvailable(context, {
         title: body.title,
         base_id: base.id,
         source_id: source.id,
@@ -83,7 +83,7 @@ export class SqlViewsService {
       NcError.badRequest('Duplicate table alias');
     }
 
-    const sqlMgr = await ProjectMgrv2.getSqlMgr(base);
+    const sqlMgr = await ProjectMgrv2.getSqlMgr(context, base);
 
     const sqlClient = await NcConnectionMgrv2.getSqlClient(source);
 
@@ -121,34 +121,25 @@ export class SqlViewsService {
       })
     )?.data?.list;
 
-    const tables = await Model.list({
+    const tables = await Model.list(context, {
       base_id: base.id,
       source_id: source.id,
     });
 
-    await Audit.insert({
-      base_id: base.id,
-      source_id: source.id,
-      op_type: AuditOperationTypes.TABLE,
-      op_sub_type: AuditOperationSubTypes.CREATE,
-      user: param?.user?.email,
-      description: `created view ${body.view_name} with alias ${body.title}  `,
-      ip: param.clientIp,
-    }).then(() => {});
-
     mapDefaultDisplayValue(columns);
 
-    const model = await Model.insert(base.id, source.id, {
+    const model = await Model.insert(context, base.id, source.id, {
       table_name: body.view_name,
       title: getTableNameAlias(body.view_name, base.prefix, source),
       type: ModelTypes.VIEW,
       order: +(tables?.pop()?.order ?? 0) + 1,
+      user_id: param.user.id,
     });
 
     let colOrder = 1;
 
     for (const column of columns) {
-      await Column.insert({
+      await Column.insert(context, {
         fk_model_id: model.id,
         ...column,
         title: getColumnNameAlias(column.cn, source),
@@ -157,6 +148,6 @@ export class SqlViewsService {
       });
     }
 
-    return await Model.get(model.id);
+    return await Model.get(context, model.id);
   }
 }

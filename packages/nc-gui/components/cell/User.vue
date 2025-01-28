@@ -1,33 +1,13 @@
 <script lang="ts" setup>
-import { onUnmounted } from '@vue/runtime-core'
 import tinycolor from 'tinycolor2'
+import { Checkbox, CheckboxGroup, Radio, RadioGroup } from 'ant-design-vue'
 import type { Select as AntSelect } from 'ant-design-vue'
 import type { UserFieldRecordType } from 'nocodb-sdk'
-import {
-  ActiveCellInj,
-  CellClickHookInj,
-  ColumnInj,
-  EditColumnInj,
-  EditModeInj,
-  IsExpandedFormOpenInj,
-  IsKanbanInj,
-  ReadonlyInj,
-  RowHeightInj,
-  computed,
-  h,
-  inject,
-  isDrawerOrModalExist,
-  onMounted,
-  ref,
-  useEventListener,
-  useRoles,
-  useSelectedCellKeyupListener,
-  watch,
-} from '#imports'
+import type { FormFieldsLimitOptionsType } from '~/lib/types'
 import MdiCloseCircle from '~icons/mdi/close-circle'
 
 interface Props {
-  modelValue?: UserFieldRecordType[] | string | null
+  modelValue?: UserFieldRecordType[] | UserFieldRecordType | string | null
   rowIndex?: number
   location?: 'cell' | 'filter'
   forceMulti?: boolean
@@ -49,11 +29,13 @@ const isEditable = inject(EditModeInj, ref(false))
 
 const activeCell = inject(ActiveCellInj, ref(false))
 
-const isExpandedFormOpen = inject(IsExpandedFormOpenInj, ref(false))!
-
 const basesStore = useBases()
 
+const baseStore = useBase()
+
 const { basesUser } = storeToRefs(basesStore)
+
+const { idUserMap } = storeToRefs(baseStore)
 
 const baseUsers = computed(() => (meta.value.base_id ? basesUser.value.get(meta.value.base_id) || [] : []))
 
@@ -69,9 +51,13 @@ const isMultiple = computed(() => forceMulti || (column.value.meta as { is_multi
 
 const rowHeight = inject(RowHeightInj, ref(undefined))
 
+const isSurveyForm = inject(IsSurveyFormInj, ref(false))
+
 const aselect = ref<typeof AntSelect>()
 
 const isOpen = ref(false)
+
+const isFocusing = ref(false)
 
 const isKanban = inject(IsKanbanInj, ref(false))
 
@@ -80,16 +66,61 @@ const searchVal = ref<string | null>()
 const { isUIAllowed } = useRoles()
 
 const options = computed<UserFieldRecordType[]>(() => {
+  let order = 1
+  const limitOptionsById =
+    ((parseProp(column.value.meta)?.limitOptions || []).reduce(
+      (o: Record<string, FormFieldsLimitOptionsType>, f: FormFieldsLimitOptionsType) => {
+        if (order < (f?.order ?? 0)) {
+          order = f.order
+        }
+        return {
+          ...o,
+          [f.id]: f,
+        }
+      },
+      {},
+    ) as Record<string, FormFieldsLimitOptionsType>) ?? {}
+
   const collaborators: UserFieldRecordType[] = []
 
-  collaborators.push(
-    ...(baseUsers.value?.map((user: any) => ({
-      id: user.id,
-      email: user.email,
-      display_name: user.display_name,
-      deleted: user.deleted,
-    })) || []),
-  )
+  if (
+    !isEditColumn.value &&
+    isForm.value &&
+    parseProp(column.value.meta)?.isLimitOption &&
+    (parseProp(column.value.meta)?.limitOptions || []).length
+  ) {
+    collaborators.push(
+      ...(baseUsers.value || [])
+        .filter((user) => {
+          if (limitOptionsById[user.id]?.show !== undefined) {
+            return limitOptionsById[user.id]?.show
+          }
+          return false
+        })
+        .map((user: any) => ({
+          id: user.id,
+          email: user.email,
+          display_name: user.display_name,
+          deleted: user.deleted,
+          order: user.id && limitOptionsById[user.id] ? limitOptionsById[user.id]?.order ?? user.order : order++,
+          meta: user.meta,
+        }))
+        .sort((a, b) => a.order - b.order),
+    )
+  } else {
+    collaborators.push(
+      ...(baseUsers.value || [])
+        .map((user: any) => ({
+          id: user.id,
+          email: user.email,
+          display_name: user.display_name,
+          deleted: user.deleted,
+          order: order++,
+          meta: user.meta,
+        }))
+        .sort((a, b) => a.order - b.order),
+    )
+  }
   return collaborators
 })
 
@@ -99,31 +130,46 @@ const editAllowed = computed(() => (hasEditRoles.value || isForm.value) && activ
 
 const vModel = computed({
   get: () => {
-    let selected: { label: string; value: string }[] = []
-    if (typeof modelValue === 'string') {
-      const idsOrMails = modelValue.split(',').map((idOrMail) => idOrMail.trim())
+    let selected: { label: string; value: string; meta: any }[] = []
+
+    let localModelValue = modelValue
+
+    // if stringified json
+    if (typeof localModelValue === 'string' && /^\s*[{[]/.test(localModelValue)) {
+      try {
+        localModelValue = JSON.parse(localModelValue)
+      } catch (e) {
+        // do nothing
+      }
+    }
+
+    if (typeof localModelValue === 'string') {
+      const idsOrMails = localModelValue.split(',').map((idOrMail) => idOrMail.trim())
       selected = idsOrMails.reduce((acc, idOrMail) => {
         const user = options.value.find((u) => u.id === idOrMail || u.email === idOrMail)
         if (user) {
           acc.push({
             label: user?.display_name || user?.email,
             value: user.id,
+            meta: user.meta,
           })
         }
         return acc
-      }, [] as { label: string; value: string }[])
+      }, [] as { label: string; value: string; meta: any }[])
     } else {
-      selected =
-        modelValue?.reduce((acc, item) => {
-          const label = item?.display_name || item?.email
-          if (label) {
-            acc.push({
-              label,
-              value: item.id,
-            })
-          }
-          return acc
-        }, [] as { label: string; value: string }[]) || []
+      selected = localModelValue
+        ? (Array.isArray(localModelValue) ? localModelValue : [localModelValue]).reduce((acc, item) => {
+            const label = item?.display_name || item?.email
+            if (label) {
+              acc.push({
+                label,
+                value: item.id,
+                meta: item?.meta,
+              })
+            }
+            return acc
+          }, [] as { label: string; value: string; meta: any }[])
+        : []
     }
 
     return selected
@@ -146,6 +192,14 @@ const vModel = computed({
       isOpen.value = false
     }
   },
+})
+
+const vModelListLayout = computed(() => {
+  if (isMultiple.value) {
+    return (vModel.value || []).map((item) => item.value)
+  } else {
+    return (vModel.value || [])?.[0]?.value || ''
+  }
 })
 
 watch(isOpen, (n, _o) => {
@@ -191,7 +245,7 @@ useSelectedCellKeyupListener(activeCell, (e) => {
         break
       }
       // toggle only if char key pressed
-      if (!(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) && e.key?.length === 1 && !isDrawerOrModalExist()) {
+      if (!(e.metaKey || e.ctrlKey || e.altKey) && e.key?.length === 1 && !isDrawerOrModalExist()) {
         e.stopPropagation()
         isOpen.value = true
       }
@@ -200,9 +254,15 @@ useSelectedCellKeyupListener(activeCell, (e) => {
 })
 
 // close dropdown list on escape
-useSelectedCellKeyupListener(isOpen, (e) => {
-  if (e.key === 'Escape') isOpen.value = false
-})
+useSelectedCellKeyupListener(
+  isOpen,
+  (e) => {
+    if (e.key === 'Escape') isOpen.value = false
+  },
+  {
+    isGridCell: false,
+  },
+)
 
 const search = () => {
   searchVal.value = aselect.value?.$el?.querySelector('.ant-select-selection-search-input')?.value
@@ -219,22 +279,11 @@ const onTagClick = (e: Event, onClose: Function) => {
   }
 }
 
-const cellClickHook = inject(CellClickHookInj, null)
-
 const toggleMenu = () => {
-  if (cellClickHook) return
-  isOpen.value = editAllowed.value && !isOpen.value
-}
+  if (isFocusing.value) return
 
-const cellClickHookHandler = () => {
   isOpen.value = editAllowed.value && !isOpen.value
 }
-onMounted(() => {
-  cellClickHook?.on(cellClickHookHandler)
-})
-onUnmounted(() => {
-  cellClickHook?.on(cellClickHookHandler)
-})
 
 const handleClose = (e: MouseEvent) => {
   // close dropdown if clicked outside of dropdown
@@ -260,116 +309,298 @@ const filterOption = (input: string, option: any) => {
     return searchVal.toLowerCase().includes(input.toLowerCase())
   }
 }
+
+// check if user is part of the base
+const isCollaborator = (userIdOrEmail) => {
+  return !idUserMap.value?.[userIdOrEmail]?.deleted
+}
+
+const onKeyDown = (e: KeyboardEvent) => {
+  // Tab
+  if (e.key === 'Tab') {
+    isOpen.value = false
+    return
+  } else if (e.key === 'Escape' && isForm.value) {
+    isOpen.value = false
+    return
+  }
+
+  e.stopPropagation()
+}
+
+const onFocus = () => {
+  isFocusing.value = true
+
+  setTimeout(() => {
+    isFocusing.value = false
+  }, 250)
+
+  if (isSurveyForm.value && vModel.value) return
+
+  isOpen.value = true
+}
 </script>
 
 <template>
   <div
-    class="nc-user-select h-full w-full flex items-center"
-    :class="{ 'read-only': readOnly, 'px-2': isExpandedFormOpen }"
+    class="nc-cell-field nc-user-select h-full w-full flex items-center"
+    :class="{ 'read-only': readOnly }"
     @click="toggleMenu"
   >
-    <div
-      v-if="!active"
-      class="flex flex-wrap"
-      :style="{
-        'display': '-webkit-box',
-        'max-width': '100%',
-        '-webkit-line-clamp': rowHeight || 1,
-        '-webkit-box-orient': 'vertical',
-        'overflow': 'hidden',
-      }"
-    >
-      <template v-for="selectedOpt of vModel" :key="selectedOpt.value">
-        <a-tag class="rounded-tag" color="'#ccc'">
-          <span
-            :style="{
-              'color': tinycolor.isReadable('#ccc' || '#ccc', '#fff', { level: 'AA', size: 'large' })
-                ? '#fff'
-                : tinycolor.mostReadable('#ccc' || '#ccc', ['#0b1d05', '#fff']).toHex8String(),
-              'font-size': '13px',
-            }"
-            :class="{ 'text-sm': isKanban }"
+    <div v-if="!isEditColumn && isForm && parseProp(column.meta)?.isList" class="w-full max-w-full">
+      <component
+        :is="isMultiple ? CheckboxGroup : RadioGroup"
+        v-model:value="vModelListLayout"
+        :disabled="readOnly || !editAllowed"
+        class="nc-field-layout-list"
+        @update:value="
+          (value) => {
+            vModel = isMultiple ? value : [value]
+          }
+        "
+      >
+        <template v-for="op of options" :key="op.id || op.email">
+          <component
+            :is="isMultiple ? Checkbox : Radio"
+            v-if="!op.deleted"
+            :key="op.id || op.email"
+            :value="op.id"
+            :data-testid="`select-option-${column.title}-${location === 'filter' ? 'filter' : rowIndex}`"
+            :class="`nc-select-option-${column.title}-${op.email}`"
           >
-            {{ selectedOpt.label }}
-          </span>
-        </a-tag>
-      </template>
+            <a-tag class="rounded-tag max-w-full !pl-0" color="'#ccc'">
+              <span
+                :style="{
+                  color: tinycolor.isReadable('#ccc' || '#ccc', '#fff', { level: 'AA', size: 'large' })
+                    ? '#fff'
+                    : tinycolor.mostReadable('#ccc' || '#ccc', ['#0b1d05', '#fff']).toHex8String(),
+                }"
+                class="flex items-stretch gap-2 text-small"
+              >
+                <div>
+                  <GeneralUserIcon
+                    size="auto"
+                    :user="op"
+                    class="!text-[0.65rem] !h-[16.8px]"
+                    :disabled="!isCollaborator(op.id)"
+                  />
+                </div>
+                <NcTooltip class="truncate max-w-full" show-on-truncate-only>
+                  <template #title>
+                    {{ op.display_name?.trim() || op.email }}
+                  </template>
+                  <span
+                    class="text-ellipsis overflow-hidden"
+                    :style="{
+                      wordBreak: 'keep-all',
+                      whiteSpace: 'nowrap',
+                      display: 'inline',
+                    }"
+                    :class="{
+                      'text-gray-600': !isCollaborator(op.id || op.email),
+                    }"
+                  >
+                    {{ op.display_name?.trim() || op.email }}
+                  </span>
+                </NcTooltip>
+              </span>
+            </a-tag>
+          </component>
+        </template>
+      </component>
+      <div
+        v-if="!isMultiple && vModel.length"
+        class="inline-block px-2 pt-2 cursor-pointer text-xs text-gray-500 hover:text-gray-800"
+        @click="vModel = []"
+      >
+        {{ $t('labels.clearSelection') }}
+      </div>
     </div>
-
-    <a-select
-      v-else
-      ref="aselect"
-      v-model:value="vModel"
-      mode="multiple"
-      class="w-full overflow-hidden"
-      :placeholder="isEditColumn ? $t('labels.optional') : ''"
-      :bordered="false"
-      clear-icon
-      :show-search="!isMobileMode"
-      :show-arrow="editAllowed && !readOnly"
-      :open="isOpen && editAllowed"
-      :disabled="readOnly || !editAllowed"
-      :class="{ 'caret-transparent': !hasEditRoles }"
-      :dropdown-class-name="`nc-dropdown-user-select-cell ${isOpen ? 'active' : ''}`"
-      :filter-option="filterOption"
-      @search="search"
-      @keydown.stop
-    >
-      <template #suffixIcon>
-        <GeneralIcon icon="arrowDown" class="text-gray-700 nc-select-expand-btn" />
-      </template>
-      <template v-for="op of options" :key="op.id || op.email">
-        <a-select-option
-          v-if="!op.deleted"
-          :value="op.id"
-          :data-testid="`select-option-${column.title}-${location === 'filter' ? 'filter' : rowIndex}`"
-          :class="`nc-select-option-${column.title}-${op.email}`"
-          @click.stop
-        >
-          <a-tag class="rounded-tag" color="'#ccc'">
+    <template v-else>
+      <div
+        v-if="!active"
+        class="flex flex-wrap"
+        :style="{
+          'display': '-webkit-box',
+          'max-width': '100%',
+          '-webkit-line-clamp': rowHeightTruncateLines(rowHeight, true),
+          '-webkit-box-orient': 'vertical',
+          'overflow': 'hidden',
+        }"
+      >
+        <template v-for="selectedOpt of vModel" :key="selectedOpt.value">
+          <a-tag
+            class="rounded-tag max-w-full !pl-0"
+            :class="{
+              '!my-0': !rowHeight || rowHeight === 1,
+            }"
+            color="'#ccc'"
+          >
             <span
               :style="{
-                'color': tinycolor.isReadable('#ccc' || '#ccc', '#fff', { level: 'AA', size: 'large' })
+                color: tinycolor.isReadable('#ccc' || '#ccc', '#fff', { level: 'AA', size: 'large' })
                   ? '#fff'
                   : tinycolor.mostReadable('#ccc' || '#ccc', ['#0b1d05', '#fff']).toHex8String(),
-                'font-size': '13px',
               }"
-              :class="{ 'text-sm': isKanban }"
+              class="flex items-stretch gap-2"
+              :class="{ 'text-sm': isKanban, 'text-small': !isKanban }"
             >
-              {{ op.display_name?.length ? op.display_name : op.email }}
+              <div class="flex-none">
+                <GeneralUserIcon
+                  :disabled="!isCollaborator(selectedOpt.value)"
+                  size="auto"
+                  :user="{
+                    display_name: !selectedOpt.label?.includes('@') ? selectedOpt.label.trim() : '',
+                    email: selectedOpt.label,
+                    meta: selectedOpt.meta,
+                  }"
+                  class="!text-[0.65rem] !h-[16.8px]"
+                />
+              </div>
+              <NcTooltip class="truncate max-w-full" show-on-truncate-only>
+                <template #title>
+                  {{ selectedOpt.label }}
+                </template>
+                <span
+                  class="text-ellipsis overflow-hidden"
+                  :style="{
+                    wordBreak: 'keep-all',
+                    whiteSpace: 'nowrap',
+                    display: 'inline',
+                  }"
+                  :class="{
+                    'text-gray-600': !isCollaborator(selectedOpt.value),
+                  }"
+                >
+                  {{ selectedOpt.label }}
+                </span>
+              </NcTooltip>
             </span>
           </a-tag>
-        </a-select-option>
-      </template>
+        </template>
+      </div>
 
-      <template #tagRender="{ label, value: val, onClose }">
-        <a-tag
-          v-if="options.find((el) => el.id === val)"
-          class="rounded-tag nc-selected-option"
-          :style="{ display: 'flex', alignItems: 'center' }"
-          color="'#ccc'"
-          :closable="editAllowed && ((vModel?.length ?? 0) > 1 || !column?.rqd)"
-          :close-icon="h(MdiCloseCircle, { class: ['ms-close-icon'] })"
-          @click="onTagClick($event, onClose)"
-          @close="onClose"
-        >
-          <span
-            :style="{
-              'color': tinycolor.isReadable('#ccc' || '#ccc', '#fff', {
-                level: 'AA',
-                size: 'large',
-              })
-                ? '#fff'
-                : tinycolor.mostReadable('#ccc' || '#ccc', ['#0b1d05', '#fff']).toHex8String(),
-              'font-size': '13px',
-            }"
-            :class="{ 'text-sm': isKanban }"
+      <a-select
+        v-else
+        ref="aselect"
+        v-model:value="vModel"
+        mode="multiple"
+        class="w-full overflow-hidden"
+        :placeholder="isEditColumn ? $t('labels.optional') : ''"
+        :bordered="false"
+        clear-icon
+        :show-search="!isMobileMode"
+        :show-arrow="editAllowed && !readOnly"
+        :open="isOpen && editAllowed"
+        :disabled="readOnly || !editAllowed"
+        :class="{ 'caret-transparent': !hasEditRoles }"
+        :dropdown-class-name="`nc-dropdown-user-select-cell !min-w-156px ${isOpen ? 'active' : ''}`"
+        :filter-option="filterOption"
+        @search="search"
+        @focus="onFocus"
+        @blur="isOpen = false"
+        @keydown="onKeyDown"
+      >
+        <template #suffixIcon>
+          <GeneralIcon icon="arrowDown" class="text-gray-700 nc-select-expand-btn" />
+        </template>
+        <template v-for="op of options" :key="op.id || op.email">
+          <a-select-option
+            v-if="!op.deleted"
+            :value="op.id"
+            :data-testid="`select-option-${column.title}-${location === 'filter' ? 'filter' : rowIndex}`"
+            :class="`nc-select-option-${column.title}-${op.email}`"
+            @click.stop
           >
-            {{ label }}
-          </span>
-        </a-tag>
-      </template>
-    </a-select>
+            <a-tag
+              class="rounded-tag max-w-full !pl-0"
+              :class="{
+                '!my-0': !rowHeight || rowHeight === 1,
+              }"
+              color="'#ccc'"
+            >
+              <span
+                :style="{
+                  color: tinycolor.isReadable('#ccc' || '#ccc', '#fff', { level: 'AA', size: 'large' })
+                    ? '#fff'
+                    : tinycolor.mostReadable('#ccc' || '#ccc', ['#0b1d05', '#fff']).toHex8String(),
+                }"
+                class="flex items-stretch gap-2"
+                :class="{ 'text-sm': isKanban, 'text-small': !isKanban }"
+              >
+                <div>
+                  <GeneralUserIcon size="auto" :user="op" class="!text-[0.65rem] !h-[16.8px]" />
+                </div>
+                <NcTooltip class="truncate max-w-full" show-on-truncate-only placement="right">
+                  <template #title>
+                    {{ op.display_name?.trim() || op.email }}
+                  </template>
+                  <span
+                    class="text-ellipsis overflow-hidden"
+                    :style="{
+                      wordBreak: 'keep-all',
+                      whiteSpace: 'nowrap',
+                      display: 'inline',
+                    }"
+                  >
+                    {{ op.display_name?.trim() || op.email }}
+                  </span>
+                </NcTooltip>
+              </span>
+            </a-tag>
+          </a-select-option>
+        </template>
+
+        <template #tagRender="{ label, value: val, onClose }">
+          <a-tag
+            v-if="options.find((el) => el.id === val)"
+            class="rounded-tag nc-selected-option !pl-0"
+            :class="{
+              '!my-0': !rowHeight || rowHeight === 1,
+            }"
+            :style="{ display: 'flex', alignItems: 'center' }"
+            color="'#ccc'"
+            :closable="editAllowed && ((vModel?.length ?? 0) > 1 || !column?.rqd)"
+            :close-icon="h(MdiCloseCircle, { class: ['ms-close-icon'] })"
+            @click="onTagClick($event, onClose)"
+            @close="onClose"
+          >
+            <span
+              :style="{
+                color: tinycolor.isReadable('#ccc' || '#ccc', '#fff', {
+                  level: 'AA',
+                  size: 'large',
+                })
+                  ? '#fff'
+                  : tinycolor.mostReadable('#ccc' || '#ccc', ['#0b1d05', '#fff']).toHex8String(),
+              }"
+              class="flex items-stretch gap-2"
+              :class="{ 'text-sm': isKanban, 'text-small': !isKanban }"
+            >
+              <div>
+                <GeneralUserIcon
+                  size="auto"
+                  :user="{
+                    display_name: !label?.includes('@') ? label.trim() : '',
+                    email: label,
+                    meta: options.find((el) => el.id === val)?.meta,
+                  }"
+                  class="!text-[0.65rem] !h-[16.8px]"
+                  :disabled="!isCollaborator(val)"
+                />
+              </div>
+              <span
+                :class="{
+                  'text-gray-600': !isCollaborator(val),
+                }"
+              >
+                {{ label }}
+              </span>
+            </span>
+          </a-tag>
+        </template>
+      </a-select>
+    </template>
   </div>
 </template>
 
@@ -406,11 +637,11 @@ const filterOption = (input: string, option: any) => {
 }
 
 .rounded-tag {
-  @apply bg-gray-200 py-0 px-[12px] rounded-[12px];
+  @apply bg-gray-200 px-2 rounded-[12px];
 }
 
 :deep(.ant-tag) {
-  @apply "rounded-tag" my-[2px];
+  @apply "rounded-tag" my-[1px];
 }
 
 :deep(.ant-tag-close-icon) {
@@ -422,7 +653,7 @@ const filterOption = (input: string, option: any) => {
 }
 
 :deep(.ant-select-selection-overflow) {
-  @apply flex-nowrap overflow-hidden;
+  @apply flex-nowrap overflow-hidden max-w-[fit-content];
 }
 
 .nc-user-select:not(.read-only) {
@@ -433,10 +664,14 @@ const filterOption = (input: string, option: any) => {
 }
 
 :deep(.ant-select-selector) {
-  @apply !px-0;
+  @apply !pl-0 flex-nowrap;
 }
 
 :deep(.ant-select-selection-search-input) {
-  @apply !text-xs;
+  @apply !text-small;
+}
+
+:deep(.nc-user-avatar) {
+  @apply min-h-4.2;
 }
 </style>

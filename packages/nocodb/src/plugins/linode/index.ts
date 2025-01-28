@@ -1,11 +1,13 @@
 import { XcActionType, XcType } from 'nocodb-sdk';
 import LinodeObjectStoragePlugin from './LinodeObjectStoragePlugin';
-import type { XcPluginConfig } from 'nc-plugin';
+import type { XcPluginConfig } from '~/types/nc-plugin';
 
 const config: XcPluginConfig = {
   builder: LinodeObjectStoragePlugin,
-  title: 'Linode Object Storage',
-  version: '0.0.1',
+  id: 'linode',
+  recoveryTitle: 'Linode Object Storage',
+  title: 'Linode',
+  version: '0.0.4',
   logo: 'plugins/linode.svg',
   tags: 'Storage',
   description:
@@ -41,6 +43,13 @@ const config: XcPluginConfig = {
         type: XcType.Password,
         required: true,
       },
+      {
+        key: 'acl',
+        label: 'Access Control Lists (ACL)',
+        placeholder: 'Default set to public-read',
+        type: XcType.SingleLineText,
+        required: false,
+      },
     ],
     actions: [
       {
@@ -59,7 +68,7 @@ const config: XcPluginConfig = {
       },
     ],
     msgOnInstall:
-      'Successfully installed and attachment will be stored in Linode Object Storage',
+      'Successfully configured! Attachments will now be stored in Linode Object Storage.',
     msgOnUninstall: '',
   },
   category: 'Storage',

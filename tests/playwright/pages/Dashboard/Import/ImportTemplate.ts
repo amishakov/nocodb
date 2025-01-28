@@ -36,12 +36,14 @@ export class ImportTemplatePage extends BasePage {
   async getImportColumnList() {
     // return an array
     const columnList: { type: string; name: string }[] = [];
-    const tr = this.get().locator(`tr.ant-table-row-level-0:visible`);
+    const tr = this.get().locator(`tr.nc-table-row:visible`);
     const rowCount = await tr.count();
-    for (let i = 0; i < rowCount; i++) {
+    for (let i = 1; i < rowCount; i++) {
+      // we start from 1 because the first tr holds the select all toggle
       // replace \n and \t from innerText
-      const columnType = (await getTextExcludeIconText(tr.nth(i))).replace(/\n|\t/g, '');
-      const columnName = await tr.nth(i).locator(`input[type="text"]`).inputValue();
+      // const columnType = (await getTextExcludeIconText(tr.nth(i))).replace(/\n|\t/g, '');
+      const columnType = 'SingleLineText'; // all columsn are treated as SingleLineText for now since we have removed the type column
+      const columnName = await tr.nth(i).locator(`.nc-import-table-field-name`).textContent();
       columnList.push({ type: columnType, name: columnName });
     }
     return columnList;
@@ -68,9 +70,6 @@ export class ImportTemplatePage extends BasePage {
       requestUrlPathToMatch: '/api/v1/db/data/bulk/',
       httpMethodsToMatch: ['POST'],
       uiAction: () => this.get().locator('button:has-text("Import"):visible').click(),
-    });
-    await this.dashboard.waitForTabRender({
-      title: tblList[0],
     });
   }
 

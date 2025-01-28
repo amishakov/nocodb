@@ -16,23 +16,27 @@ import { validatePayload } from '~/helpers';
 import { NcError } from '~/helpers/catchError';
 import { extractProps } from '~/helpers/extractProps';
 import { randomTokenString } from '~/helpers/stringHelpers';
-import { BaseUser, Store, SyncSource, User } from '~/models';
+import { BaseUser, PresignedUrl, Store, SyncSource, User } from '~/models';
 
 import Noco from '~/Noco';
-import { MetaTable } from '~/utils/globals';
+import { MetaTable, RootScopes } from '~/utils/globals';
 
 @Injectable()
 export class OrgUsersService {
   constructor(
-    private readonly baseUsersService: BaseUsersService,
-    private readonly appHooksService: AppHooksService,
+    protected readonly baseUsersService: BaseUsersService,
+    protected readonly appHooksService: AppHooksService,
   ) {}
 
   async userList(param: {
     // todo: add better typing
     query: Record<string, any>;
   }) {
-    return await User.list(param.query);
+    const users = await User.list(param.query);
+
+    await PresignedUrl.signMetaIconImage(users);
+
+    return users;
   }
 
   async userUpdate(param: {
@@ -52,7 +56,6 @@ export class OrgUsersService {
 
     return await User.update(param.userId, {
       ...updateBody,
-      token_version: randomTokenString(),
     });
   }
 
@@ -72,7 +75,15 @@ export class OrgUsersService {
 
       // TODO: assign super admin as base owner
       for (const baseUser of baseUsers) {
-        await BaseUser.delete(baseUser.base_id, baseUser.fk_user_id, ncMeta);
+        await BaseUser.delete(
+          {
+            workspace_id: baseUser.fk_workspace_id,
+            base_id: baseUser.base_id,
+          },
+          baseUser.base_id,
+          baseUser.fk_user_id,
+          ncMeta,
+        );
       }
 
       // delete sync source entry
@@ -145,30 +156,32 @@ export class OrgUsersService {
           const count = await User.count();
 
           this.appHooksService.emit(AppEvents.ORG_USER_INVITE, {
-            invitedBy: param.req.user,
             user,
             count,
-            ip: param.req.clientIp,
             req: param.req,
           });
 
           // in case of single user check for smtp failure
           // and send back token if failed
-          if (
-            emails.length === 1 &&
-            !(await this.baseUsersService.sendInviteEmail(
-              email,
-              invite_token,
-              param.req,
-            ))
-          ) {
-            return { invite_token, email };
+          if (emails.length === 1) {
+            if (
+              !(await this.baseUsersService.sendInviteEmail({
+                email,
+                token: invite_token,
+                useOrgTemplate: true,
+                req: param.req,
+                roles: param.user.roles || OrgUserRoles.VIEWER,
+              }))
+            )
+              return { invite_token, email };
           } else {
-            this.baseUsersService.sendInviteEmail(
+            await this.baseUsersService.sendInviteEmail({
               email,
-              invite_token,
-              param.req,
-            );
+              token: invite_token,
+              req: param.req,
+              useOrgTemplate: true,
+              roles: param.user.roles || OrgUserRoles.VIEWER,
+            });
           }
         } catch (e) {
           console.log(e);
@@ -201,7 +214,7 @@ export class OrgUsersService {
     const user = await User.get(param.userId);
 
     if (!user) {
-      NcError.badRequest(`User with id '${param.userId}' not found`);
+      NcError.userNotFound(param.userId);
     }
 
     const invite_token = uuidv4();
@@ -212,8 +225,8 @@ export class OrgUsersService {
     });
 
     const pluginData = await Noco.ncMeta.metaGet2(
-      null,
-      null,
+      RootScopes.ROOT,
+      RootScopes.ROOT,
       MetaTable.PLUGIN,
       {
         category: PluginCategory.EMAIL,
@@ -227,16 +240,16 @@ export class OrgUsersService {
       );
     }
 
-    await this.baseUsersService.sendInviteEmail(
-      user.email,
-      invite_token,
-      param.req,
-    );
+    await this.baseUsersService.sendInviteEmail({
+      email: user.email,
+      token: invite_token,
+      req: param.req,
+      useOrgTemplate: true,
+      roles: user.roles,
+    });
 
     this.appHooksService.emit(AppEvents.ORG_USER_RESEND_INVITE, {
-      invitedBy: param.req.user,
-      user,
-      ip: param.req.clientIp,
+      user: user as UserType,
       req: param.req,
     });
 
@@ -247,7 +260,7 @@ export class OrgUsersService {
     const user = await User.get(param.userId);
 
     if (!user) {
-      NcError.badRequest(`User with id '${param.userId}' not found`);
+      NcError.userNotFound(param.userId);
     }
     const token = uuidv4();
     await User.update(user.id, {

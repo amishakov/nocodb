@@ -1,7 +1,7 @@
 import { test } from '@playwright/test';
 import { DashboardPage } from '../../../pages/Dashboard';
 import setup from '../../../setup';
-import { isMysql, isPg, isSqlite } from '../../../setup/db';
+import { enableQuickRun, isMysql, isPg, isSqlite } from '../../../setup/db';
 
 test.describe('Shared view', () => {
   let dashboard: DashboardPage;
@@ -58,6 +58,9 @@ test.describe('Shared view', () => {
     });
     await dashboard.grid.toolbar.clickFilter();
 
+    // kludge: wait for 2 seconds to avoid flaky test
+    await page.waitForTimeout(2000);
+
     await page.goto(sharedLink);
     await page.reload();
 
@@ -84,6 +87,9 @@ test.describe('Shared view', () => {
 
     await dashboard.grid.toolbar.filter.reset();
 
+    // kludge: wait for 2 seconds to avoid flaky test
+    await page.waitForTimeout(2000);
+
     await page.goto(sharedLink);
     await page.reload();
 
@@ -103,6 +109,9 @@ test.describe('Shared view', () => {
     await dashboard.treeView.openTable({ title: 'Film' });
 
     await dashboard.grid.toolbar.groupBy.remove({ index: 0 });
+
+    // kludge: wait for 2 seconds to avoid flaky test
+    await page.waitForTimeout(2000);
 
     await page.goto(sharedLink);
     await page.reload();
@@ -124,9 +133,12 @@ test.describe('Shared view', () => {
      * - copy link
      **/
 
-    // close 'Team & Auth' tab
-    await dashboard.closeTab({ title: 'Team & Auth' });
+    if (enableQuickRun()) test.skip();
+
     await dashboard.treeView.openTable({ title: 'Address' });
+
+    // Unhide City column
+    await dashboard.grid.toolbar.fields.toggle({ title: 'City', isLocallySaved: false, checked: true });
 
     // hide column
     await dashboard.grid.toolbar.fields.toggle({ title: 'Address2' });
@@ -134,7 +146,7 @@ test.describe('Shared view', () => {
 
     // sort
     await dashboard.grid.toolbar.sort.add({
-      title: 'District',
+      title: 'PostalCode',
       ascending: false,
       locallySaved: false,
     });
@@ -168,7 +180,6 @@ test.describe('Shared view', () => {
       { title: 'Address', isVisible: true },
       { title: 'Address2', isVisible: false },
       { title: 'District', isVisible: true },
-      { title: 'City', isVisible: true },
       { title: 'PostalCode', isVisible: true },
       { title: 'Phone', isVisible: true },
       { title: 'LastUpdate', isVisible: true },
@@ -225,7 +236,7 @@ test.describe('Shared view', () => {
       await sharedPage.grid.toolbar.clickFilter();
     }
     await sharedPage.grid.toolbar.fields.toggle({ title: 'LastUpdate', isLocallySaved: true });
-    expectedColumns[6].isVisible = false;
+    expectedColumns[5].isVisible = false;
 
     // verify new sort & filter criteria
     for (const column of expectedColumns) {
@@ -244,8 +255,8 @@ test.describe('Shared view', () => {
      **/
 
     // verify download
-    await sharedPage.grid.toolbar.clickDownload(
-      'Download CSV',
+    await sharedPage.grid.topbar.clickDownload(
+      'CSV',
       isSqlite(context) || isPg(context) ? 'expectedDataSqlite.txt' : 'expectedData.txt'
     );
   });
@@ -258,8 +269,6 @@ test.describe('Shared view', () => {
      * - Download disabled
      * - Add new record & column after shared view creation; verify
      **/
-
-    await dashboard.closeTab({ title: 'Team & Auth' });
     await dashboard.treeView.openTable({ title: 'Country' });
 
     sharedLink = await dashboard.grid.topbar.getSharedViewUrl(false, 'p@ssword', true);
@@ -267,11 +276,6 @@ test.describe('Shared view', () => {
     // add new column, record after share view creation
     await dashboard.grid.column.create({
       title: 'New Column',
-    });
-    await dashboard.grid.addNewRow({
-      index: 25,
-      columnHeader: 'Country',
-      value: 'New Country',
     });
 
     await dashboard.signOut();
@@ -282,12 +286,12 @@ test.describe('Shared view', () => {
     // verify if password request modal exists
     const sharedPage2 = new DashboardPage(page, context.base);
     await sharedPage2.rootPage.locator('input[placeholder="Enter password"]').fill('incorrect p@ssword');
-    await sharedPage2.rootPage.click('button:has-text("Unlock")');
+    await sharedPage2.rootPage.click('button[data-testid="nc-shared-view-password-submit-btn"]');
     await sharedPage2.verifyToast({ message: 'INVALID_SHARED_VIEW_PASSWORD' });
 
     // correct password
     await sharedPage2.rootPage.locator('input[placeholder="Enter password"]').fill('p@ssword');
-    await sharedPage2.rootPage.click('button:has-text("Unlock")');
+    await sharedPage2.rootPage.click('button[data-testid="nc-shared-view-password-submit-btn"]');
 
     // verify if download button is disabled
     await sharedPage2.grid.toolbar.verifyDownloadDisabled();
@@ -300,7 +304,7 @@ test.describe('Shared view', () => {
     await sharedPage2.grid.toolbar.clickFilter();
     await sharedPage2.grid.toolbar.filter.add({
       title: 'Country',
-      value: 'New Country',
+      value: 'China',
       operation: 'is like',
       locallySaved: true,
     });
@@ -309,7 +313,7 @@ test.describe('Shared view', () => {
     await sharedPage2.grid.cell.verify({
       index: 0,
       columnHeader: 'Country',
-      value: 'New Country',
+      value: 'China',
     });
   });
 });
@@ -342,12 +346,12 @@ const expectedRecords = [
 //   { index: 2, columnHeader: 'PostalCode', value: '61391' },
 // ];
 const sqliteExpectedRecords = [
-  { index: 0, columnHeader: 'Address', value: '217 Botshabelo Place' },
-  { index: 1, columnHeader: 'Address', value: '17 Kabul Boulevard' },
-  { index: 2, columnHeader: 'Address', value: '1888 Kabul Drive' },
-  { index: 0, columnHeader: 'PostalCode', value: '49521' },
-  { index: 1, columnHeader: 'PostalCode', value: '38594' },
-  { index: 2, columnHeader: 'PostalCode', value: '20936' },
+  { index: 0, columnHeader: 'Address', value: '1013 Tabuk Boulevard' },
+  { index: 1, columnHeader: 'Address', value: '669 Firozabad Loop' },
+  { index: 2, columnHeader: 'Address', value: '381 Kabul Way' },
+  { index: 0, columnHeader: 'PostalCode', value: '96203' },
+  { index: 1, columnHeader: 'PostalCode', value: '92265' },
+  { index: 2, columnHeader: 'PostalCode', value: '87272' },
 ];
 const expectedRecords2 = [
   { index: 0, columnHeader: 'Address', value: '1661 Abha Drive' },
@@ -383,6 +387,6 @@ const expectedVirtualRecords = [
 const sqliteExpectedVirtualRecords = [
   { index: 0, columnHeader: 'Customers', count: 1, type: 'hm' },
   { index: 1, columnHeader: 'Customers', count: 1, type: 'hm' },
-  { index: 0, columnHeader: 'City', count: 1, type: 'bt', value: ['Davao'] },
-  { index: 1, columnHeader: 'City', count: 1, type: 'bt', value: ['Nagareyama'] },
+  { index: 0, columnHeader: 'City', count: 1, type: 'bt', value: ['Kanchrapara'] },
+  { index: 1, columnHeader: 'City', count: 1, type: 'bt', value: ['al-Ayn'] },
 ];

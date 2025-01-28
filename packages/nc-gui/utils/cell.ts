@@ -1,5 +1,5 @@
 import type { ColumnType } from 'nocodb-sdk'
-import { UITypes } from 'nocodb-sdk'
+import { ButtonActionsType, UITypes } from 'nocodb-sdk'
 import dayjs from 'dayjs'
 
 export const dataTypeLow = (column: ColumnType) => column.dt?.toLowerCase()
@@ -15,6 +15,10 @@ export const isYear = (column: ColumnType, abstractType: any) => abstractType ==
 export const isTime = (column: ColumnType, abstractType: any) => abstractType === 'time' || column.uidt === UITypes.Time
 export const isDateTime = (column: ColumnType, abstractType: any) =>
   abstractType === 'datetime' || column.uidt === UITypes.DateTime
+export const isReadonlyDateTime = (column: ColumnType, _abstractType: any) =>
+  column.uidt === UITypes.CreatedTime || column.uidt === UITypes.LastModifiedTime
+export const isReadonlyUser = (column: ColumnType, _abstractType: any) =>
+  column.uidt === UITypes.CreatedBy || column.uidt === UITypes.LastModifiedBy
 export const isJSON = (column: ColumnType) => column.uidt === UITypes.JSON
 export const isEnum = (column: ColumnType) => column.uidt === UITypes.SingleSelect
 export const isSingleSelect = (column: ColumnType) => column.uidt === UITypes.SingleSelect
@@ -33,6 +37,14 @@ export const isPercent = (column: ColumnType) => column.uidt === UITypes.Percent
 export const isSpecificDBType = (column: ColumnType) => column.uidt === UITypes.SpecificDBType
 export const isGeometry = (column: ColumnType) => column.uidt === UITypes.Geometry
 export const isUser = (column: ColumnType) => column.uidt === UITypes.User
+export const isButton = (column: ColumnType) => column.uidt === UITypes.Button
+export const isAiButton = (column: ColumnType) =>
+  column.uidt === UITypes.Button && (column?.colOptions as any)?.type === ButtonActionsType.Ai
+export const isScriptButton = (column: ColumnType) =>
+  column.uidt === UITypes.Button && (column?.colOptions as any)?.type === ButtonActionsType.Script
+export const isAI = (column: ColumnType) =>
+  column.uidt === UITypes.LongText && parseProp(column?.meta)?.[LongTextAiMetaProp] === true
+
 export const isAutoSaved = (column: ColumnType) =>
   [
     UITypes.SingleLineText,
@@ -77,4 +89,35 @@ export const renderValue = (result?: any) => {
     // assume HH:mm at this moment
     return dayjs(d).isValid() ? dayjs(d).format('YYYY-MM-DD HH:mm') : d
   })
+}
+
+export const isNumericFieldType = (column: ColumnType, abstractType: any) => {
+  return (
+    isInt(column, abstractType) ||
+    isFloat(column, abstractType) ||
+    isDecimal(column) ||
+    isCurrency(column) ||
+    isPercent(column) ||
+    isDuration(column)
+  )
+}
+
+export const rowHeightInPx: Record<string, number> = {
+  1: 32,
+  2: 60,
+  4: 90,
+  6: 120,
+}
+
+export const rowHeightTruncateLines = (rowHeight?: number, isSelectOption = false) => {
+  switch (rowHeight) {
+    case 2:
+      return 2
+    case 4:
+      return isSelectOption ? 3 : 4
+    case 6:
+      return isSelectOption ? 4 : 6
+    default:
+      return 1
+  }
 }

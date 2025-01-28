@@ -1,11 +1,13 @@
 import { XcActionType, XcType } from 'nocodb-sdk';
 import ScalewayObjectStoragePlugin from './ScalewayObjectStoragePlugin';
-import type { XcPluginConfig } from 'nc-plugin';
+import type { XcPluginConfig } from '~/types/nc-plugin';
 
 const config: XcPluginConfig = {
   builder: ScalewayObjectStoragePlugin,
-  title: 'Scaleway Object Storage',
-  version: '0.0.1',
+  id: 'scaleway',
+  title: 'Scaleway',
+  recoveryTitle: 'Scaleway Object Storage',
+  version: '0.0.4',
   logo: 'plugins/scaleway.png',
   tags: 'Storage',
   description:
@@ -41,6 +43,13 @@ const config: XcPluginConfig = {
         type: XcType.Password,
         required: true,
       },
+      {
+        key: 'acl',
+        label: 'Access Control Lists (ACL)',
+        placeholder: 'Default set to public-read',
+        type: XcType.SingleLineText,
+        required: false,
+      },
     ],
     actions: [
       {
@@ -58,7 +67,8 @@ const config: XcPluginConfig = {
         type: XcType.Button,
       },
     ],
-    msgOnInstall: 'Successfully installed Scaleway Object Storage',
+    msgOnInstall:
+      'Successfully configured! Attachments will now be stored in Scaleway Object Storage.',
     msgOnUninstall: '',
   },
   category: 'Storage',

@@ -1,30 +1,11 @@
 <script setup lang="ts">
-import type { TableType } from 'nocodb-sdk'
-
+import Draggable from 'vuedraggable'
+import type { TableType, ViewType } from 'nocodb-sdk'
 import ProjectWrapper from './ProjectWrapper.vue'
-
-import {
-  TreeViewInj,
-  computed,
-  isDrawerOrModalExist,
-  isElementInvisible,
-  isMac,
-  reactive,
-  ref,
-  resolveComponent,
-  storeToRefs,
-  useBase,
-  useBases,
-  useDialog,
-  useNuxtApp,
-  useRoles,
-  useRouter,
-  useTablesStore,
-} from '#imports'
 
 const { isUIAllowed } = useRoles()
 
-const { $e } = useNuxtApp()
+const { $e, $api } = useNuxtApp()
 
 const router = useRouter()
 
@@ -32,7 +13,7 @@ const route = router.currentRoute
 
 const basesStore = useBases()
 
-const { createProject: _createProject } = basesStore
+const { createProject: _createProject, updateProject } = basesStore
 
 const { bases, basesList, activeProjectId } = storeToRefs(basesStore)
 
@@ -42,9 +23,27 @@ const baseCreateDlg = ref(false)
 
 const baseStore = useBase()
 
-const { isSharedBase } = storeToRefs(baseStore)
+const { loadTables } = baseStore
 
-const { activeTable: _activeTable } = storeToRefs(useTablesStore())
+const { isSharedBase, base } = storeToRefs(baseStore)
+
+const { updateTab } = useTabs()
+
+const tablesStore = useTablesStore()
+
+const { loadProjectTables } = tablesStore
+
+const { activeTable: _activeTable } = storeToRefs(tablesStore)
+
+const { isMobileMode } = useGlobal()
+
+const { setMeta } = useMetas()
+
+const { allRecentViews } = storeToRefs(useViewsStore())
+
+const { refreshCommandPalette } = useCommandPalette()
+
+const { addUndo, defineProjectScope } = useUndoRedo()
 
 const contextMenuTarget = reactive<{ type?: 'base' | 'source' | 'table' | 'main' | 'layout'; value?: any }>({})
 
@@ -53,17 +52,16 @@ const setMenuContext = (type: 'base' | 'source' | 'table' | 'main' | 'layout', v
   contextMenuTarget.value = value
 }
 
-function openRenameTableDialog(table: TableType, _ = false) {
-  if (!table || !table.source_id) return
+function openViewDescriptionDialog(view: ViewType) {
+  if (!view || !view.id) return
 
-  $e('c:table:rename')
+  $e('c:view:description')
 
   const isOpen = ref(true)
 
-  const { close } = useDialog(resolveComponent('DlgTableRename'), {
+  const { close } = useDialog(resolveComponent('DlgViewDescriptionUpdate'), {
     'modelValue': isOpen,
-    'tableMeta': table,
-    'sourceId': table.source_id, // || sources.value[0].id,
+    'view': view,
     'onUpdate:modelValue': closeDialog,
   })
 
@@ -71,6 +69,104 @@ function openRenameTableDialog(table: TableType, _ = false) {
     isOpen.value = false
 
     close(1000)
+  }
+}
+
+function openTableDescriptionDialog(table: TableType) {
+  if (!table || !table.id) return
+
+  $e('c:table:description')
+
+  const isOpen = ref(true)
+
+  const { close } = useDialog(resolveComponent('DlgTableDescriptionUpdate'), {
+    'modelValue': isOpen,
+    'tableMeta': table,
+    'onUpdate:modelValue': closeDialog,
+  })
+
+  function closeDialog() {
+    isOpen.value = false
+
+    close(1000)
+  }
+}
+
+/**
+ * tableRenameId is combination of tableId & sourceId
+ * @example `${tableId}:${sourceId}`
+ */
+const tableRenameId = ref('')
+
+async function handleTableRename(
+  table: TableType,
+  title: string,
+  originalTitle: string,
+  updateTitle: (title: string) => void,
+  undo = false,
+  disableTitleDiffCheck?: boolean,
+) {
+  if (!table || !table.source_id) return
+
+  if (title) {
+    title = title.trim()
+  }
+
+  if (title === originalTitle && !disableTitleDiffCheck) return
+
+  updateTitle(title)
+
+  try {
+    await $api.dbTable.update(table.id as string, {
+      base_id: table.base_id,
+      table_name: title,
+      title,
+    })
+
+    await loadProjectTables(table.base_id!, true)
+
+    if (!undo) {
+      addUndo({
+        redo: {
+          fn: (table: TableType, t: string, ot: string, updateTitle: (title: string) => void) => {
+            handleTableRename(table, t, ot, updateTitle, true, true)
+          },
+          args: [table, title, originalTitle, updateTitle],
+        },
+        undo: {
+          fn: (table: TableType, t: string, ot: string, updateTitle: (title: string) => void) => {
+            handleTableRename(table, t, ot, updateTitle, true, true)
+          },
+          args: [table, originalTitle, title, updateTitle],
+        },
+        scope: defineProjectScope({ model: table }),
+      })
+    }
+
+    await loadTables()
+
+    // update recent views if default view is renamed
+    allRecentViews.value = allRecentViews.value.map((v) => {
+      if (v.tableID === table.id) {
+        if (v.isDefault) v.viewName = title
+
+        v.tableName = title
+      }
+      return v
+    })
+
+    // update metas
+    const newMeta = await $api.dbTable.read(table.id as string)
+    await setMeta(newMeta)
+
+    updateTab({ id: table.id }, { title: newMeta.title })
+
+    refreshCommandPalette()
+
+    $e('a:table:rename')
+  } catch (e: any) {
+    message.error(await extractSdkResponseErrorMsg(e))
+    updateTitle(originalTitle)
   }
 }
 
@@ -117,7 +213,8 @@ const duplicateTable = async (table: TableType) => {
 
 const isCreateTableAllowed = computed(
   () =>
-    isUIAllowed('tableCreate') &&
+    base.value?.sources?.[0] &&
+    isUIAllowed('tableCreate', { source: base.value?.sources?.[0] }) &&
     route.value.name !== 'index' &&
     route.value.name !== 'index-index' &&
     route.value.name !== 'index-index-create' &&
@@ -127,6 +224,11 @@ const isCreateTableAllowed = computed(
 
 useEventListener(document, 'keydown', async (e: KeyboardEvent) => {
   const cmdOrCtrl = isMac() ? e.metaKey : e.ctrlKey
+
+  if (isActiveInputElementExist()) {
+    return
+  }
+
   if (e.altKey && !e.shiftKey && !cmdOrCtrl) {
     switch (e.keyCode) {
       case 84: {
@@ -174,8 +276,11 @@ const handleContext = (e: MouseEvent) => {
 provide(TreeViewInj, {
   setMenuContext,
   duplicateTable,
-  openRenameTableDialog,
+  handleTableRename,
+  openViewDescriptionDialog,
+  openTableDescriptionDialog,
   contextMenuTarget,
+  tableRenameId,
 })
 
 useEventListener(document, 'contextmenu', handleContext, true)
@@ -186,6 +291,38 @@ const scrollTableNode = () => {
 
   // Scroll to the table node
   activeTableDom?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+}
+
+const onMove = async (_event: { moved: { newIndex: number; oldIndex: number; element: NcProject } }) => {
+  const {
+    moved: { newIndex = 0, oldIndex = 0, element },
+  } = _event
+
+  if (!element?.id) return
+
+  let nextOrder: number
+
+  // set new order value based on the new order of the items
+  if (basesList.value.length - 1 === newIndex) {
+    // If moving to the end, set nextOrder greater than the maximum order in the list
+    nextOrder = Math.max(...basesList.value.map((item) => item?.order ?? 0)) + 1
+  } else if (newIndex === 0) {
+    // If moving to the beginning, set nextOrder smaller than the minimum order in the list
+    nextOrder = Math.min(...basesList.value.map((item) => item?.order ?? 0)) / 2
+  } else {
+    nextOrder =
+      (parseFloat(String(basesList.value[newIndex - 1]?.order ?? 0)) +
+        parseFloat(String(basesList.value[newIndex + 1]?.order ?? 0))) /
+      2
+  }
+
+  const _nextOrder = !isNaN(Number(nextOrder)) ? nextOrder : oldIndex
+
+  await updateProject(element.id, {
+    order: _nextOrder,
+  })
+
+  $e('a:base:reorder')
 }
 
 watch(
@@ -202,33 +339,30 @@ watch(
     immediate: true,
   },
 )
-
-watch(
-  activeProjectId,
-  () => {
-    const activeProjectDom = document.querySelector(`.nc-treeview [data-base-id="${activeProjectId.value}"]`)
-    if (!activeProjectDom) return
-
-    if (isElementInvisible(activeProjectDom)) {
-      // Scroll to the table node
-      activeProjectDom?.scrollIntoView({ behavior: 'smooth' })
-    }
-  },
-  {
-    immediate: true,
-  },
-)
 </script>
 
 <template>
   <div class="nc-treeview-container flex flex-col justify-between select-none">
     <div v-if="!isSharedBase" class="text-gray-500 font-medium pl-3.5 mb-1">{{ $t('objects.projects') }}</div>
     <div mode="inline" class="nc-treeview pb-0.5 flex-grow min-h-50 overflow-x-hidden">
-      <template v-if="basesList?.length">
-        <ProjectWrapper v-for="base of basesList" :key="base.id" :base-role="base.project_role" :base="base">
-          <DashboardTreeViewProjectNode />
-        </ProjectWrapper>
-      </template>
+      <div v-if="basesList?.length">
+        <Draggable
+          :model-value="basesList"
+          :disabled="isMobileMode || !isUIAllowed('baseReorder') || basesList?.length < 2"
+          item-key="id"
+          handle=".base-title-node"
+          ghost-class="ghost"
+          @change="onMove($event)"
+        >
+          <template #item="{ element: baseItem }">
+            <div :key="baseItem.id">
+              <ProjectWrapper :base-role="baseItem.project_role" :base="baseItem">
+                <DashboardTreeViewProjectNode />
+              </ProjectWrapper>
+            </div>
+          </template>
+        </Draggable>
+      </div>
 
       <WorkspaceEmptyPlaceholder v-else-if="!isWorkspaceLoading" />
     </div>
@@ -236,4 +370,12 @@ watch(
   </div>
 </template>
 
-<style scoped lang="scss"></style>
+<style scoped lang="scss">
+.ghost,
+.ghost > * {
+  @apply pointer-events-none;
+}
+.ghost {
+  @apply bg-primary-selected;
+}
+</style>

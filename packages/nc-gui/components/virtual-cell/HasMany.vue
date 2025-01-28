@@ -2,22 +2,6 @@
 import type { ColumnType } from 'nocodb-sdk'
 import { isSystemColumn } from 'nocodb-sdk'
 import type { Ref } from 'vue'
-import {
-  CellValueInj,
-  ColumnInj,
-  IsFormInj,
-  IsUnderLookupInj,
-  ReadonlyInj,
-  ReloadRowDataHookInj,
-  RowInj,
-  computed,
-  inject,
-  ref,
-  useProvideLTARStore,
-  useRoles,
-  useSelectedCellKeyupListener,
-  useSmartsheetRowStoreOrThrow,
-} from '#imports'
 
 const column = inject(ColumnInj)!
 
@@ -27,7 +11,13 @@ const row = inject(RowInj)!
 
 const reloadRowTrigger = inject(ReloadRowDataHookInj, createEventHook())
 
-const isForm = inject(IsFormInj)
+const isForm = inject(IsFormInj, ref(false))
+
+const isExpandedForm = inject(IsExpandedFormOpenInj, ref(false))
+
+const cellClickHook = inject(CellClickHookInj, null)
+
+const onDivDataCellEventHook = inject(OnDivDataCellEventHookInj, null)
 
 const readOnly = inject(ReadonlyInj, ref(false))
 
@@ -36,6 +26,12 @@ const isUnderLookup = inject(IsUnderLookupInj, ref(false))
 const listItemsDlg = ref(false)
 
 const childListDlg = ref(false)
+
+const isOpen = ref(false)
+
+const hideBackBtn = ref(false)
+
+const rowHeight = inject(RowHeightInj, ref())
 
 const { isUIAllowed } = useRoles()
 
@@ -65,8 +61,6 @@ const cells = computed(() =>
 
     const value = curr[relatedTableDisplayValueProp.value]
 
-    if (!value) return acc
-
     return [...acc, { value, item: curr }]
   }, []),
 )
@@ -87,6 +81,31 @@ const hasManyColumn = computed(
 const onAttachRecord = () => {
   childListDlg.value = false
   listItemsDlg.value = true
+  hideBackBtn.value = false
+}
+
+const onAttachLinkedRecord = () => {
+  listItemsDlg.value = false
+  childListDlg.value = true
+}
+
+const openChildList = () => {
+  if (isUnderLookup.value) return
+
+  childListDlg.value = true
+  listItemsDlg.value = false
+
+  isOpen.value = true
+  hideBackBtn.value = false
+}
+
+const openListDlg = () => {
+  if (isUnderLookup.value) return
+
+  listItemsDlg.value = true
+  childListDlg.value = false
+  isOpen.value = true
+  hideBackBtn.value = true
 }
 
 useSelectedCellKeyupListener(inject(ActiveCellInj, ref(false)), (e: KeyboardEvent) => {
@@ -97,61 +116,131 @@ useSelectedCellKeyupListener(inject(ActiveCellInj, ref(false)), (e: KeyboardEven
       break
   }
 })
+
+watch([childListDlg, listItemsDlg], () => {
+  isOpen.value = childListDlg.value || listItemsDlg.value
+})
+
+watch(
+  isOpen,
+  (next) => {
+    if (!next) {
+      listItemsDlg.value = false
+      childListDlg.value = false
+    }
+  },
+  { flush: 'post' },
+)
+
+const active = inject(ActiveCellInj, ref(false))
+
+function onCellClick(e: Event) {
+  if (e.type !== 'click') return
+  if (isExpandedForm.value || isForm.value || active.value) {
+    openChildList()
+  }
+}
+
+onMounted(() => {
+  onDivDataCellEventHook?.on(onCellClick)
+  cellClickHook?.on(onCellClick)
+})
+
+onUnmounted(() => {
+  onDivDataCellEventHook?.off(onCellClick)
+  cellClickHook?.off(onCellClick)
+})
 </script>
 
 <template>
-  <div class="flex items-center gap-1 w-full chips-wrapper">
-    <div class="chips flex items-center img-container flex-1 hm-items flex-nowrap min-w-0 overflow-hidden">
-      <template v-if="cells">
-        <VirtualCellComponentsItemChip
-          v-for="(cell, i) of cells"
-          :key="i"
-          :item="cell.item"
-          :value="cell.value"
-          :column="hasManyColumn"
-          :show-unlink-button="true"
-          @unlink="unlinkRef(cell.item)"
-        />
+  <LazyVirtualCellComponentsLinkRecordDropdown v-model:is-open="isOpen">
+    <div class="nc-cell-field flex items-center gap-1 w-full chips-wrapper min-h-4">
+      <div
+        class="chips flex items-center img-container flex-1 hm-items min-w-0 overflow-y-auto overflow-x-hidden"
+        :class="{ 'flex-wrap': rowHeight !== 1 }"
+        :style="{ maxHeight: `${rowHeightInPx[rowHeight]}px` }"
+      >
+        <template v-if="cells">
+          <VirtualCellComponentsItemChip
+            v-for="(cell, i) of cells"
+            :key="i"
+            :item="cell.item"
+            :value="cell.value"
+            :column="hasManyColumn"
+            :show-unlink-button="false"
+            :truncate="false"
+            @unlink="unlinkRef(cell.item)"
+          />
 
-        <span v-if="cellValue?.length === 10" class="caption pointer ml-1 grey--text" @click="childListDlg = true">
-          more...
-        </span>
-      </template>
+          <span v-if="cellValue?.length === 10" class="caption pointer ml-1 grey--text" @click="openChildList"> more... </span>
+        </template>
+      </div>
+
+      <div
+        v-if="!isUnderLookup && !isSystemColumn(column)"
+        class="flex justify-end gap-[2px] min-h-4 items-center absolute right-1 top-[3px] has-many-actions"
+        :class="{ active }"
+        @click.stop
+      >
+        <NcButton
+          v-if="(!readOnly && isUIAllowed('dataEdit')) || isForm"
+          size="xsmall"
+          type="secondary"
+          class="nc-action-icon"
+          @click.stop="openListDlg"
+        >
+          <GeneralIcon icon="plus" class="text-sm nc-plus" />
+        </NcButton>
+        <NcButton size="xsmall" type="secondary" class="nc-action-icon" @click.stop="openChildList">
+          <GeneralIcon icon="maximize" />
+        </NcButton>
+      </div>
     </div>
-
-    <div v-if="!isUnderLookup && !isSystemColumn(column)" class="flex justify-end gap-1 min-h-[30px] items-center">
-      <GeneralIcon
-        icon="expand"
-        class="select-none transform text-sm nc-action-icon text-gray-500/50 hover:text-gray-500 nc-arrow-expand"
-        @click.stop="childListDlg = true"
+    <template #overlay>
+      <LazyVirtualCellComponentsUnLinkedItems
+        v-if="listItemsDlg"
+        v-model="listItemsDlg"
+        :column="hasManyColumn"
+        :hide-back-btn="hideBackBtn"
+        @attach-linked-record="onAttachLinkedRecord"
       />
 
-      <GeneralIcon
-        v-if="(!readOnly && isUIAllowed('dataEdit')) || isForm"
-        icon="plus"
-        class="select-none text-sm nc-action-icon text-gray-500/50 hover:text-gray-500 nc-plus"
-        @click.stop="listItemsDlg = true"
+      <LazyVirtualCellComponentsLinkedItems
+        v-if="childListDlg"
+        v-model="childListDlg"
+        :cell-value="localCellValue"
+        :column="hasManyColumn"
+        @attach-record="onAttachRecord"
       />
-    </div>
-
-    <LazyVirtualCellComponentsListItems v-if="listItemsDlg || childListDlg" v-model="listItemsDlg" :column="hasManyColumn" />
-
-    <LazyVirtualCellComponentsListChildItems
-      v-if="listItemsDlg || childListDlg"
-      v-model="childListDlg"
-      :cell-value="localCellValue"
-      :column="hasManyColumn"
-      @attach-record="onAttachRecord"
-    />
-  </div>
+    </template>
+  </LazyVirtualCellComponentsLinkRecordDropdown>
 </template>
 
 <style scoped>
-.nc-action-icon {
-  @apply hidden cursor-pointer;
+.has-many-actions {
+  @apply hidden;
 }
 
-.chips-wrapper:hover .nc-action-icon {
+.has-many-actions.active,
+.chips-wrapper:hover .has-many-actions {
   @apply flex;
+}
+</style>
+
+<style lang="scss">
+.nc-default-value-wrapper,
+.nc-expanded-cell,
+.ant-form-item-control-input {
+  .has-many-actions {
+    @apply !flex;
+  }
+}
+
+.ant-form-item-control-input .has-many-actions {
+  @apply top-[7px] right-[5px];
+}
+
+.nc-expanded-cell .has-many-actions {
+  @apply top-[2px] right-[5px];
 }
 </style>

@@ -2,20 +2,7 @@
 import type { VNodeRef } from '@vue/runtime-core'
 import type { OrgUserReqType } from 'nocodb-sdk'
 import { OrgUserRoles } from 'nocodb-sdk'
-import type { User, Users } from '#imports'
-import {
-  Form,
-  computed,
-  emailValidator,
-  extractSdkResponseErrorMsg,
-  iconMap,
-  message,
-  ref,
-  useCopy,
-  useDashboard,
-  useI18n,
-  useNuxtApp,
-} from '#imports'
+import { extractEmail } from '~/helpers/parsers/parserHelpers'
 
 interface Props {
   show: boolean
@@ -35,6 +22,8 @@ const { copy } = useCopy()
 const { dashboardUrl } = useDashboard()
 
 const { clearBasesUser } = useBases()
+
+const { appInfo } = useGlobal()
 
 const usersData = ref<Users>({ emails: '', role: OrgUserRoles.VIEWER, invitationToken: undefined })
 
@@ -99,6 +88,25 @@ const clickInviteMore = () => {
 }
 
 const emailInput: VNodeRef = (el) => (el as HTMLInputElement)?.focus()
+
+const onPaste = (e: ClipboardEvent) => {
+  const pastedText = e.clipboardData?.getData('text') ?? ''
+
+  usersData.value.emails = extractEmail(pastedText) || pastedText
+}
+
+const userRoleOptions = [
+  {
+    title: 'objects.roleType.orgLevelCreator',
+    subtitle: 'msg.info.roles.orgCreator',
+    value: OrgUserRoles.CREATOR,
+  },
+  {
+    title: 'objects.roleType.orgLevelViewer',
+    subtitle: 'msg.info.roles.orgViewer',
+    value: OrgUserRoles.VIEWER,
+  },
+]
 </script>
 
 <template>
@@ -187,60 +195,53 @@ const emailInput: VNodeRef = (el) => (el as HTMLInputElement)?.focus()
                       :ref="emailInput"
                       v-model:value="usersData.emails"
                       size="middle"
+                      class="nc-input-sm"
                       validate-trigger="onBlur"
                       :placeholder="$t('labels.email')"
+                      @paste.prevent="onPaste"
                     />
                   </a-form-item>
                 </div>
 
-                <div class="flex flex-col w-2/4">
+                <div v-show="!isEeUI" class="flex flex-col w-2/4">
                   <a-form-item name="role" :rules="[{ required: true, message: $t('msg.roleRequired') }]">
                     <div class="ml-1 mb-1 text-xs text-gray-500">{{ $t('labels.selectUserRole') }}</div>
 
-                    <a-select
+                    <NcSelect
                       v-model:value="usersData.role"
-                      class="nc-user-roles"
-                      dropdown-class-name="nc-dropdown-user-role !px-2"
+                      class="w-55 nc-user-roles"
+                      :dropdown-match-select-width="false"
+                      dropdown-class-name="nc-dropdown-user-role max-w-64"
                     >
                       <a-select-option
+                        v-for="(option, idx) of userRoleOptions"
+                        :key="idx"
                         class="nc-role-option"
-                        :value="OrgUserRoles.CREATOR"
-                        :label="$t(`objects.roleType.orgLevelCreator`)"
+                        :value="option.value"
                       >
-                        <div class="flex items-center gap-1 justify-between">
-                          <div data-rec="true">{{ $t(`objects.roleType.orgLevelCreator`) }}</div>
+                        <div class="w-full flex items-start gap-1">
+                          <div class="flex-1 max-w-[calc(100%_-_16px)]">
+                            <NcTooltip show-on-truncate-only class="truncate" data-rec="true">
+                              <template #title>
+                                {{ $t(option.title) }}
+                              </template>
+                              {{ $t(option.title) }}
+                            </NcTooltip>
+
+                            <div class="nc-select-hide-item text-gray-500 text-xs whitespace-normal" data-rec="true">
+                              {{ $t(option.subtitle) }}
+                            </div>
+                          </div>
+
                           <GeneralIcon
-                            v-if="usersData.role === OrgUserRoles.CREATOR"
+                            v-if="usersData.role === option.value"
                             id="nc-selected-item-icon"
                             icon="check"
                             class="w-4 h-4 text-primary"
                           />
                         </div>
-
-                        <span class="text-gray-500 text-xs whitespace-normal" data-rec="true">
-                          {{ $t('msg.info.roles.orgCreator') }}
-                        </span>
                       </a-select-option>
-
-                      <a-select-option
-                        class="nc-role-option"
-                        :value="OrgUserRoles.VIEWER"
-                        :label="$t(`objects.roleType.orgLevelViewer`)"
-                      >
-                        <div class="flex items-center gap-1 justify-between">
-                          <div data-rec="true">{{ $t(`objects.roleType.orgLevelViewer`) }}</div>
-                          <GeneralIcon
-                            v-if="usersData.role === OrgUserRoles.VIEWER"
-                            id="nc-selected-item-icon"
-                            icon="check"
-                            class="w-4 h-4 text-primary"
-                          />
-                        </div>
-                        <span class="text-gray-500 text-xs whitespace-normal" data-rec="true">
-                          {{ $t('msg.info.roles.orgViewer') }}
-                        </span>
-                      </a-select-option>
-                    </a-select>
+                    </NcSelect>
                   </a-form-item>
                 </div>
               </div>
@@ -260,3 +261,9 @@ const emailInput: VNodeRef = (el) => (el as HTMLInputElement)?.focus()
     </div>
   </a-modal>
 </template>
+
+<style lang="scss" scoped>
+.nc-input-sm {
+  @apply !rounded-md;
+}
+</style>

@@ -33,13 +33,6 @@
 
 # 快速尝试
 
-## NPX
-
-如果你需要一个交互式的配置，你可以运行下面的命令。
-
-```
-npx create-nocodb-app
-```
 
 <img src="https://user-images.githubusercontent.com/35857179/163672964-00ef5d62-0434-447d-ac01-3ebb780099b9.png" width="520px"/>
 
@@ -54,39 +47,33 @@ npm install
 npm start
 ```
 
+## 宝塔面板Docker一键部署（推荐）
+
+1. 安装宝塔面板9.2.0及以上版本，前往 [宝塔面板](https://www.bt.cn/new/download.html?r=dk_nocodb) 官网，选择正式版的脚本下载安装
+
+2. 安装后登录宝塔面板，在左侧菜单栏中点击 `Docker`，首次进入会提示安装`Docker`服务，点击立即安装，按提示完成安装
+
+3. 安装完成后在应用商店中搜索`nocodb`，点击安装，配置域名等基本信息即可完成安装
+
 ## Docker 部署
 
 ```bash
 # 如果使用 SQLite 的话
-docker run -d --name nocodb \
--v "$(pwd)"/nocodb:/usr/app/data/ \
--p 8080:8080 \
-nocodb/nocodb:latest
-
-# 如果使用 MySQL 的话
-docker run -d --name nocodb-mysql \
--v "$(pwd)"/nocodb:/usr/app/data/ \
--p 8080:8080 \
--e NC_DB="mysql2://host.docker.internal:3306?u=root&p=password&d=d1" \
--e NC_AUTH_JWT_SECRET="569a1821-0a93-45e8-87ab-eb857f20a010" \
-nocodb/nocodb:latest
+docker run -d \
+  --name noco \
+  -v "$(pwd)"/nocodb:/usr/app/data/ \
+  -p 8080:8080 \
+  nocodb/nocodb:latest
 
 # 如果使用 PostgreSQL 的话
-docker run -d --name nocodb-postgres \
--v "$(pwd)"/nocodb:/usr/app/data/ \
--p 8080:8080 \
--e NC_DB="pg://host.docker.internal:5432?u=root&p=password&d=d1" \
--e NC_AUTH_JWT_SECRET="569a1821-0a93-45e8-87ab-eb857f20a010" \
-nocodb/nocodb:latest
-
-# 如果使用 MSSQL 的话
-docker run -d --name nocodb-mssql \
--v "$(pwd)"/nocodb:/usr/app/data/ \
--p 8080:8080 \
--e NC_DB="mssql://host.docker.internal:1433?u=root&p=password&d=d1" \
--e NC_AUTH_JWT_SECRET="569a1821-0a93-45e8-87ab-eb857f20a010" \
-nocodb/nocodb:latest
-```
+docker run -d \
+  --name noco \
+  -v "$(pwd)"/nocodb:/usr/app/data/ \
+  -p 8080:8080 \
+  -e NC_DB="pg://host.docker.internal:5432?u=root&p=password&d=d1" \
+  -e NC_AUTH_JWT_SECRET="569a1821-0a93-45e8-87ab-eb857f20a010" \
+  nocodb/nocodb:latest
+  ```
 
 > 你可以通过在 0.10.6 以上的版本中挂载 `/usr/app/data/` 来持久化数据，否则你的数据会在重新创建容器后完全丢失。
 
@@ -98,13 +85,8 @@ nocodb/nocodb:latest
 
 ```bash
 git clone https://github.com/nocodb/nocodb
-# 如果使用 MySQL 的话
-cd nocodb/docker-compose/mysql
 # 如果使用 PostgreSQL 的话
-cd nocodb/docker-compose/pg
-# 如果使用 MSSQL 的话
-cd nocodb/docker-compose/mssql
-docker-compose up -d
+cd nocodb/docker-compose/2_pg
 ```
 
 > 你可以通过在 0.10.6 以上的版本中挂载 `/usr/app/data/` 来持久化数据，否则你的数据会在重新创建容器后完全丢失。
@@ -119,9 +101,6 @@ docker-compose up -d
 
 <a href="https://discord.gg/5RgZmkW" target="_blank">
 <img src="https://discordapp.com/api/guilds/661905455894888490/widget.png?style=banner3" alt="">
-</a>
-<a href="https://community.nocodb.com/" target="_blank">
-<img src="https://i2.wp.com/www.feverbee.com/wp-content/uploads/2018/07/logo-discourse.png" alt="">
 </a>
 
 # 截图
@@ -189,11 +168,11 @@ docker-compose up -d
 
 ### 架构同步
 
-如果您在 NocoDB GUI 之外进行了更改，我们允许您同步架构更改。 但是，必须注意的是，您必须附有自己的迁移架构才能从一个环境迁移到其他环境。 有关详细信息，请参阅 <a href="https://docs.nocodb.com/setup-and-usages/sync-schema/" target="_blank">同步架构</a>。
+如果您在 NocoDB GUI 之外进行了更改，我们允许您同步架构更改。 但是，必须注意的是，您必须附有自己的迁移架构才能从一个环境迁移到其他环境。 有关详细信息，请参阅 <a href="https://docs.nocodb.com/data-sources/sync-with-data-source" target="_blank">同步架构</a>。
 
 ### 审计
 
-我们将所有用户操作日志保存在一起。 有关详细信息，请参阅 <a href="https://docs.nocodb.com/setup-and-usages/audit" target="_blank">审计</a>。
+我们将所有用户操作日志保存在一起。 有关详细信息，请参阅 <a href="https://docs.nocodb.com/data-sources/actions-on-data-sources/#audit-logs" target="_blank">审计</a>。
 
 # 生产部署
 
@@ -201,7 +180,7 @@ docker-compose up -d
 
 ## 环境变量
 
-参见[环境变量](https://docs.nocodb.com/getting-started/environment-variables)
+参见[环境变量](https://docs.nocodb.com/getting-started/self-hosted/environment-variables)
 
 # 开发
 

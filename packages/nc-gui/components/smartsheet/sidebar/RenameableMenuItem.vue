@@ -2,7 +2,6 @@
 import type { VNodeRef } from '@vue/runtime-core'
 import type { KanbanType, ViewType, ViewTypes } from 'nocodb-sdk'
 import type { WritableComputedRef } from '@vue/reactivity'
-import { IsLockedInj, inject, message, onKeyStroke, useDebounceFn, useNuxtApp, useRoles, useVModel } from '#imports'
 
 interface Props {
   view: ViewType
@@ -242,7 +241,7 @@ watch(rightSidebarState, () => {
           <template #overlay>
             <NcMenu :data-testid="`view-sidebar-view-actions-${vModel.alias || vModel.title}`">
               <NcMenuItem size="small" :centered="false" @click.stop="onDblClick">
-                <GeneralIcon icon="edit" />
+                <GeneralIcon icon="rename" />
                 Rename
               </NcMenuItem>
               <NcMenuItem size="small" :centered="false" class="nc-view-copy-icon" @click.stop="onDuplicate">

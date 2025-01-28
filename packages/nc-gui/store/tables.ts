@@ -1,7 +1,6 @@
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import type { TableType } from 'nocodb-sdk'
-import { useTitle } from '@vueuse/core'
-import type { SidebarTableNode } from '~/lib'
+import type { SidebarTableNode } from '~/lib/types'
 
 export const useTablesStore = defineStore('tablesStore', () => {
   const { includeM2M, ncNavigateTo } = useGlobal()
@@ -48,20 +47,6 @@ export const useTablesStore = defineStore('tablesStore', () => {
 
     return activeTables.value.find((t) => t.id === activeTableId.value)
   })
-
-  watch(
-    () => activeTable.value?.title,
-    (title) => {
-      if (basesStore.openedProject?.type !== 'database') return
-
-      if (!title) {
-        useTitle(basesStore.openedProject?.title)
-        return
-      }
-
-      useTitle(`${basesStore.openedProject?.title}: ${title}`)
-    },
-  )
 
   const loadProjectTables = async (baseId: string, force = false) => {
     if (!force && baseTables.value.get(baseId)) {
@@ -214,24 +199,53 @@ export const useTablesStore = defineStore('tablesStore', () => {
     }
   }
 
-  const tableUrl = ({ table, completeUrl }: { table: TableType; completeUrl: boolean }) => {
-    const base = basesStore.bases.get(table.base_id!)
-    if (!base) return
+  const loadTableMeta = async (tableId: string) => {
+    try {
+      const meta = await $api.dbTable.read(tableId as string)
+      baseTables.value.set(
+        meta.base_id!,
+        baseTables.value.get(meta.base_id!)!.map((t) => (t.id === tableId ? { ...t, ...meta } : t)),
+      )
+
+      return meta
+    } catch (e: any) {
+      return null
+    }
+  }
+
+  const tableUrl = ({ table, completeUrl, isSharedBase }: { table: TableType; completeUrl: boolean; isSharedBase?: boolean }) => {
+    let base
+    if (!isSharedBase) {
+      base = basesStore.bases.get(table.base_id!)
+      if (!base) return
+    }
 
     const nuxtPageName = 'index-typeOrId-baseId-index-index-viewId-viewTitle'
 
     const url = router.resolve({
       name: nuxtPageName,
-      params: {
-        typeOrId: workspaceStore.activeWorkspaceId,
-        baseId: base.id,
-        viewId: table.id,
-      },
+      params: isSharedBase
+        ? {
+            typeOrId: route.value.params.typeOrId,
+            baseId: route.value.params.baseId,
+            viewId: route.value.params.viewId,
+          }
+        : {
+            typeOrId: workspaceStore.activeWorkspaceId,
+            baseId: base?.id,
+            viewId: table.id,
+          },
     })
 
     if (completeUrl) return `${window.location.origin}/${url.href}`
 
     return url.href
+  }
+
+  const reloadTableMeta = async (tableId: string) => {
+    const { getMeta } = useMetas()
+
+    await getMeta(tableId, true)
   }
 
   return {
@@ -245,6 +259,8 @@ export const useTablesStore = defineStore('tablesStore', () => {
     activeTableId,
     navigateToTable,
     tableUrl,
+    reloadTableMeta,
+    loadTableMeta,
   }
 })
 

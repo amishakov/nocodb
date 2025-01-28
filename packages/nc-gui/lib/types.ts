@@ -1,8 +1,21 @@
-import type { BaseType, ColumnType, FilterType, MetaType, PaginatedType, Roles, RolesObj, TableType, ViewTypes } from 'nocodb-sdk'
+import type { CSSProperties } from '@vue/runtime-dom'
+
+import type {
+  BaseType,
+  ColumnType,
+  FilterType,
+  MetaType,
+  PaginatedType,
+  PublicAttachmentScope,
+  Roles,
+  RolesObj,
+  TableType,
+  ViewTypes,
+} from 'nocodb-sdk'
 import type { I18n } from 'vue-i18n'
 import type { Theme as AntTheme } from 'ant-design-vue/es/config-provider'
 import type { UploadFile } from 'ant-design-vue'
-import type { ImportSource, ImportType, TabType } from './enums'
+import type { AuditLogsDateRange, ImportSource, ImportType, PreFilledMode, TabType } from './enums'
 import type { rolePermissions } from './acl'
 
 interface User {
@@ -16,6 +29,8 @@ interface User {
   invite_token?: string
   base_id?: string
   display_name?: string | null
+  featureFlags?: Record<string, boolean>
+  meta?: MetaType
 }
 
 interface ProjectMetaInfo {
@@ -32,10 +47,14 @@ interface ProjectMetaInfo {
 interface Field {
   order: number
   show: number | boolean
+  bold: boolean | number
+  italic: boolean | number
+  underline: boolean | number
   title: string
   fk_column_id?: string
   system?: boolean
   isViewEssentialField?: boolean
+  initialShow?: boolean
 }
 
 type Filter = FilterType & {
@@ -56,14 +75,51 @@ interface Row {
   row: Record<string, any>
   oldRow: Record<string, any>
   rowMeta: {
+    // Used in InfiniteScroll Grid View
+    rowIndex?: number
+    isLoading?: boolean
+    isValidationFailed?: boolean
+    isRowOrderUpdated?: boolean
+    isDragging?: boolean
+    rowProgress?: {
+      message: string
+      progress: number
+    }
+
     new?: boolean
     selected?: boolean
     commentCount?: number
     changed?: boolean
     saving?: boolean
+    ltarState?: Record<string, Record<string, any> | Record<string, any>[] | null>
+    fromExpandedForm?: boolean
     // use in datetime picker component
     isUpdatedFromCopyNPaste?: Record<string, boolean>
+    // Used in Calendar view
+    style?: Partial<CSSStyleDeclaration>
+    range?: {
+      fk_from_col: ColumnType
+      fk_to_col: ColumnType | null
+      is_readonly?: boolean
+    }
+    id?: string
+    position?: string
+    dayIndex?: number
+    overLapIteration?: number
+    numberOfOverlaps?: number
+    minutes?: number
+    recordIndex?: number // For week spanning records in month view
+    maxSpanning?: number
   }
+}
+
+interface Attachment {
+  url: string
+}
+
+interface CalendarRangeType {
+  fk_from_column_id: string
+  fk_to_column_id: string | null
 }
 
 type RolePermissions = Omit<typeof rolePermissions, 'guest' | 'admin' | 'super'>
@@ -94,6 +150,8 @@ interface SharedViewMeta extends Record<string, any> {
   theme?: Partial<ThemeConfig>
   allowCSVDownload?: boolean
   rtl?: boolean
+  preFillEnabled?: boolean
+  preFilledMode?: PreFilledMode
 }
 
 interface SharedView {
@@ -151,8 +209,10 @@ interface Group {
   paginationData: PaginatedType
   nested: boolean
   children?: Group[]
+  aggregations: Record<string, any>
   rows?: Row[]
   root?: boolean
+  displayValueProp?: string
 }
 
 interface GroupNestedIn {
@@ -170,11 +230,131 @@ interface Users {
 
 type ViewPageType = 'view' | 'webhook' | 'api' | 'field' | 'relation'
 
-type NcButtonSize = 'xxsmall' | 'xsmall' | 'small' | 'medium'
+type NcButtonSize = 'xxsmall' | 'xsmall' | 'small' | 'medium' | 'xs'
 
 interface SidebarTableNode extends TableType {
   isMetaLoading?: boolean
   isViewsLoading?: boolean
+}
+
+interface UsersSortType {
+  field?: 'email' | 'roles' | 'title' | 'id' | 'memberCount' | 'baseCount' | 'workspaceCount' | 'created_at'
+  direction?: 'asc' | 'desc'
+}
+
+type CommandPaletteType = 'cmd-k' | 'cmd-j' | 'cmd-l'
+
+interface FormFieldsLimitOptionsType {
+  id: string
+  order: number
+  show: boolean
+}
+
+interface ImageCropperConfig {
+  stencilProps?: {
+    aspectRatio?: number
+    /**
+     * It can be used to force the cropper fills all visible area by default:
+     * @default true
+     */
+    fillDefault?: boolean
+    circlePreview?: boolean
+  }
+  minHeight?: number
+  minWidth?: number
+  imageRestriction?: 'fill-area' | 'fit-area' | 'stencil' | 'none'
+}
+
+interface ImageCropperProps {
+  imageConfig: {
+    src: string
+    type: string
+    name: string
+  }
+  cropperConfig: ImageCropperConfig
+  uploadConfig?: {
+    path?: string
+    scope?: PublicAttachmentScope
+    // filesize in bytes
+    maxFileSize?: number
+  }
+  showCropper: boolean
+}
+
+interface AuditLogsQuery {
+  type?: string[]
+  workspaceId?: string
+  baseId?: string
+  sourceId?: string
+  user?: string
+  startDate?: string
+  endDate?: string
+  dateRange?: AuditLogsDateRange
+  dateRangeLabel?: string
+  orderBy: {
+    created_at?: 'asc' | 'desc'
+    user?: 'asc' | 'desc'
+  }
+}
+
+interface NcTableColumnProps<T extends object = Record<string, any>> {
+  key: 'name' | 'action' | string
+  // title is column header cell value and we can also pass i18n value as this is just used to render in UI
+  title: string
+  // minWidth is required to fix overflow col issue
+  minWidth: number
+  // provide width if we want col to be fixed width or provide basis value
+  width?: number
+  basis?: CSSProperties['flex-basis']
+  padding?: CSSProperties['padding']
+  align?: 'items-center' | 'items-start' | 'items-end'
+  justify?: 'justify-center' | 'justify-start' | 'justify-end'
+  showOrderBy?: boolean
+  // dataIndex is used as key to extract data from row object
+  dataIndex?: keyof T | (string & Record<never, never>)
+  // name can be used as value, which will be used to display in header if title is absent and in data-test-id
+  name?: string
+  [key: string]: any
+}
+
+interface ProductFeedItem {
+  Id: string
+  Title: string
+  Description: string
+  ['Feed Source']: 'Youtube' | 'Github' | 'All' | 'Cloud'
+  Url: string
+  Tags?: string
+  ['Published Time']: string
+  Image?: string | null
+}
+
+type SordDirectionType = 'asc' | 'desc' | undefined
+
+type NestedArray<T> = T | NestedArray<T>[]
+
+interface ViewActionState {
+  viewProgress: {
+    progress: number
+    message?: string
+  } | null
+  rowProgress: Map<
+    string,
+    {
+      progress: number
+      message?: string
+    }
+  >
+  cellProgress: Map<
+    string,
+    Map<
+      string,
+      {
+        progress: number
+        message?: string
+        icon?: keyof typeof iconMap
+      }
+    >
+  >
 }
 
 export type {
@@ -202,4 +382,17 @@ export type {
   ViewPageType,
   NcButtonSize,
   SidebarTableNode,
+  UsersSortType,
+  CommandPaletteType,
+  CalendarRangeType,
+  FormFieldsLimitOptionsType,
+  ImageCropperConfig,
+  ImageCropperProps,
+  AuditLogsQuery,
+  NcTableColumnProps,
+  SordDirectionType,
+  ProductFeedItem,
+  Attachment,
+  NestedArray,
+  ViewActionState,
 }

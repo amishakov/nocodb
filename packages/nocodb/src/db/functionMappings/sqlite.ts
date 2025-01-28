@@ -208,6 +208,42 @@ const sqlite3 = {
       ),
     };
   },
+  DAY: async ({ fn, knex, pt, colAlias }: MapFnArgs) => {
+    return {
+      builder: knex.raw(
+        `CAST(strftime('%d', (${
+          (await fn(pt?.arguments[0])).builder
+        })) AS INTEGER) ${colAlias}`,
+      ),
+    };
+  },
+  MONTH: async ({ fn, knex, pt, colAlias }: MapFnArgs) => {
+    return {
+      builder: knex.raw(
+        `CAST(strftime('%m', (${
+          (await fn(pt?.arguments[0])).builder
+        })) AS INTEGER) ${colAlias}`,
+      ),
+    };
+  },
+  YEAR: async ({ fn, knex, pt, colAlias }: MapFnArgs) => {
+    return {
+      builder: knex.raw(
+        `CAST(strftime('%Y', (${
+          (await fn(pt?.arguments[0])).builder
+        })) AS INTEGER) ${colAlias}`,
+      ),
+    };
+  },
+  HOUR: async ({ fn, knex, pt, colAlias }: MapFnArgs) => {
+    return {
+      builder: knex.raw(
+        `CAST(strftime('%H', (${
+          (await fn(pt?.arguments[0])).builder
+        })) AS INTEGER) ${colAlias}`,
+      ),
+    };
+  },
   AND: async (args: MapFnArgs) => {
     return {
       builder: args.knex.raw(
@@ -241,6 +277,19 @@ const sqlite3 = {
           )
           .wrap('(', ')')
           .toQuery()} THEN 1 ELSE 0 END ${args.colAlias}`,
+      ),
+    };
+  },
+  async JSON_EXTRACT(args: MapFnArgs) {
+    return {
+      builder: args.knex.raw(
+        `CASE WHEN json_valid(${
+          (await args.fn(args.pt.arguments[0])).builder
+        }) = 1 THEN json_extract(${
+          (await args.fn(args.pt.arguments[0])).builder
+        }, CONCAT('$', ${
+          (await args.fn(args.pt.arguments[1])).builder
+        })) ELSE NULL END${args.colAlias}`,
       ),
     };
   },

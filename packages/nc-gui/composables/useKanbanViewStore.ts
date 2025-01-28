@@ -1,31 +1,5 @@
 import type { ComputedRef, Ref } from 'vue'
 import type { Api, ColumnType, KanbanType, SelectOptionType, SelectOptionsType, TableType, ViewType } from 'nocodb-sdk'
-import type { Row, UndoRedoAction } from '#imports'
-import {
-  IsPublicInj,
-  SharedViewPasswordInj,
-  deepCompare,
-  enumColor,
-  extractPkFromRow,
-  extractSdkResponseErrorMsg,
-  inject,
-  message,
-  parseProp,
-  provide,
-  ref,
-  rowPkData,
-  storeToRefs,
-  useApi,
-  useBase,
-  useFieldQuery,
-  useI18n,
-  useInjectionState,
-  useNuxtApp,
-  useRoles,
-  useSharedView,
-  useSmartsheetStoreOrThrow,
-  useUndoRedo,
-} from '#imports'
 
 type GroupingFieldColOptionsType = SelectOptionType & { collapsed: boolean }
 
@@ -38,6 +12,10 @@ const [useProvideKanbanViewStore, useKanbanViewStore] = useInjectionState(
     if (!meta) {
       throw new Error('Table meta is not available')
     }
+
+    const addNewStackId = 'addNewStack'
+
+    const uncategorizedStackId = 'uncategorized'
 
     const { t } = useI18n()
 
@@ -76,7 +54,7 @@ const [useProvideKanbanViewStore, useKanbanViewStore] = useInjectionState(
       if (!col) return
 
       if (!search.value.query.trim()) return
-      if (['text', 'string'].includes(sqlUi.value.getAbstractType(col)) && col.dt !== 'bigint') {
+      if (sqlUi.value && ['text', 'string'].includes(sqlUi.value.getAbstractType(col)) && col.dt !== 'bigint') {
         where = `(${col.title},like,%${search.value.query.trim()}%)`
       } else {
         where = `(${col.title},eq,${search.value.query.trim()})`
@@ -161,17 +139,35 @@ const [useProvideKanbanViewStore, useKanbanViewStore] = useInjectionState(
       }
 
       for (const data of groupData ?? []) {
-        const key = data.key
+        const key = typeof data.key === 'string' ? (data.key?.length ? data.key : null) : null
         formattedData.value.set(key, formatData(data.value.list))
         countByStack.value.set(key, data.value.pageInfo.totalRows || 0)
       }
+    }
+
+    const filerDuplicateRecords = (existingRecords: Row[], newRecords: Row[]) => {
+      const existingRecordsMap = (existingRecords || []).reduce((acc, curr) => {
+        const primaryKey = extractPkFromRow(curr.row, meta!.value!.columns as ColumnType[])
+        if (primaryKey) {
+          acc[primaryKey] = curr
+        }
+        return acc
+      }, {} as Record<string, Row>)
+
+      return (newRecords || []).filter(({ row }) => {
+        const primaryKey = extractPkFromRow(row, meta!.value!.columns as ColumnType[])
+        if (primaryKey && existingRecordsMap[primaryKey]) {
+          return false
+        }
+        return true
+      })
     }
 
     async function loadMoreKanbanData(stackTitle: string, params: Parameters<Api<any>['dbViewRow']['list']>[4] = {}) {
       if ((!base?.value?.id || !meta.value?.id || !viewMeta.value?.id) && !isPublic.value) return
       let where = `(${groupingField.value},eq,${stackTitle})`
       if (stackTitle === null) {
-        where = `(${groupingField.value},is,null)`
+        where = `(${groupingField.value},is,blank)`
       }
 
       if (xWhere.value) {
@@ -193,7 +189,10 @@ const [useProvideKanbanViewStore, useKanbanViewStore] = useInjectionState(
             where,
           })
 
-      formattedData.value.set(stackTitle, [...formattedData.value.get(stackTitle)!, ...formatData(response!.list!)])
+      formattedData.value.set(stackTitle, [
+        ...formattedData.value.get(stackTitle)!,
+        ...filerDuplicateRecords(formattedData.value.get(stackTitle)!, formatData(response!.list!)),
+      ])
     }
 
     async function loadKanbanMeta() {
@@ -211,7 +210,7 @@ const [useProvideKanbanViewStore, useKanbanViewStore] = useInjectionState(
 
       const { fk_grp_col_id, meta: stack_meta } = kanbanMetaData.value
 
-      stackMetaObj.value = stack_meta ? JSON.parse(stack_meta as string) : {}
+      stackMetaObj.value = parseProp(stack_meta) || {}
 
       if (stackMetaObj.value && fk_grp_col_id && stackMetaObj.value[fk_grp_col_id]) {
         // keep the existing order (index of the array) but update the values done outside kanban
@@ -223,6 +222,10 @@ const [useProvideKanbanViewStore, useKanbanViewStore] = useInjectionState(
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { collapsed, ...rest } = stackMetaObj.value[fk_grp_col_id][idx]
             if (!deepCompare(rest, option)) {
+              // Don't update stack meta if it is shared view and
+              // shared view meta grouping field options not matched with actual column options
+              if (isPublic.value) continue
+
               // update the option in stackMetaObj
               stackMetaObj.value[fk_grp_col_id][idx] = {
                 ...stackMetaObj.value[fk_grp_col_id][idx],
@@ -254,7 +257,9 @@ const [useProvideKanbanViewStore, useKanbanViewStore] = useInjectionState(
 
         // handle deleted options
         const columnOptionIds = (groupingFieldColumn.value?.colOptions as SelectOptionsType)?.options.map(({ id }) => id)
-        const cols = stackMetaObj.value[fk_grp_col_id].filter(({ id }) => id !== 'uncategorized' && !columnOptionIds.includes(id))
+        const cols = stackMetaObj.value[fk_grp_col_id].filter(
+          ({ id }) => id !== uncategorizedStackId && !columnOptionIds.includes(id),
+        )
         for (const col of cols) {
           const idx = stackMetaObj.value[fk_grp_col_id].map((ele: Record<string, any>) => ele.id).indexOf(col.id)
           if (idx !== -1) {
@@ -276,7 +281,8 @@ const [useProvideKanbanViewStore, useKanbanViewStore] = useInjectionState(
             isChanged = true
           }
         }
-        groupingFieldColOptions.value = stackMetaObj.value[fk_grp_col_id]
+
+        groupingFieldColOptions.value = [...stackMetaObj.value[fk_grp_col_id]]
 
         if (isChanged) {
           await updateKanbanStackMeta()
@@ -286,10 +292,11 @@ const [useProvideKanbanViewStore, useKanbanViewStore] = useInjectionState(
         }
       } else {
         // build stack meta
+
         groupingFieldColOptions.value = [
           ...((groupingFieldColumn.value?.colOptions as SelectOptionsType & { collapsed: boolean })?.options ?? []),
           // enrich uncategorized stack
-          { id: 'uncategorized', title: null, order: 0, color: enumColor.light[2] } as any,
+          { id: uncategorizedStackId, title: null, order: 0, color: themeV3Colors.gray[500] } as any,
         ]
           // sort by initial order
           .sort((a, b) => a.order! - b.order!)
@@ -313,7 +320,13 @@ const [useProvideKanbanViewStore, useKanbanViewStore] = useInjectionState(
     }
 
     async function updateKanbanMeta(updateObj: Partial<KanbanType>) {
-      if (!viewMeta?.value?.id || !isUIAllowed('dataEdit')) return
+      if (
+        !viewMeta?.value?.id ||
+        !isUIAllowed('dataEdit', {
+          skipSourceCheck: true,
+        })
+      )
+        return
       await $api.dbView.kanbanUpdate(viewMeta.value.id, updateObj)
     }
 
@@ -391,7 +404,7 @@ const [useProvideKanbanViewStore, useKanbanViewStore] = useInjectionState(
           base?.value.id as string,
           meta.value?.id as string,
           viewMeta?.value?.id as string,
-          id,
+          encodeURIComponent(id),
           {
             [property]: toUpdate.row[property],
           },
@@ -477,7 +490,7 @@ const [useProvideKanbanViewStore, useKanbanViewStore] = useInjectionState(
           // update to groupingField value to target value
           formattedData.value.set(
             stackTitle,
-            formattedData.value.get(stackTitle)!.map((o) => ({
+            (formattedData.value.get(stackTitle) || []).map((o) => ({
               ...o,
               row: {
                 ...o.row,
@@ -511,11 +524,14 @@ const [useProvideKanbanViewStore, useKanbanViewStore] = useInjectionState(
           (o) => o.title !== stackTitle,
         )
         ;(groupingFieldColumn.value.colOptions as SelectOptionsType).options = newOptions
+
+        const cdf = groupingFieldColumn.value.cdf ? groupingFieldColumn.value.cdf.replace(/^'/, '').replace(/'$/, '') : null
         await api.dbTableColumn.update(groupingFieldColumn.value.id!, {
           ...groupingFieldColumn.value,
           colOptions: {
             options: newOptions,
           },
+          cdf: cdf === stackTitle ? null : cdf,
         } as any)
 
         // update kanban stack meta
@@ -541,6 +557,10 @@ const [useProvideKanbanViewStore, useKanbanViewStore] = useInjectionState(
       const stackTitle = row.row[groupingField.value]
       const oldStackTitle = row.oldRow[groupingField.value]
 
+      // if the update happen on linked table, do not attempt to update stack
+      if (!stackTitle || oldStackTitle) {
+        return
+      }
       if (isNewRow) {
         // add a new record
         if (stackTitle) {
@@ -616,6 +636,7 @@ const [useProvideKanbanViewStore, useKanbanViewStore] = useInjectionState(
     }
 
     function removeRowFromUncategorizedStack() {
+      if (isPublic.value) return
       // remove the last record
       formattedData.value.get(null)!.pop()
       // decrease total count by 1
@@ -646,10 +667,7 @@ const [useProvideKanbanViewStore, useKanbanViewStore] = useInjectionState(
         }
 
         if (!row.rowMeta.new) {
-          const id = (meta?.value?.columns as ColumnType[])
-            ?.filter((c) => c.pk)
-            .map((c) => row.row[c.title!])
-            .join('___')
+          const id = extractPkFromRow(row.row, meta?.value?.columns)
 
           const deleted = await deleteRowById(id as string)
           if (!deleted) {
@@ -708,6 +726,8 @@ const [useProvideKanbanViewStore, useKanbanViewStore] = useInjectionState(
       shouldScrollToRight,
       deleteRow,
       moveHistory,
+      addNewStackId,
+      uncategorizedStackId,
     }
   },
   'kanban-view-store',

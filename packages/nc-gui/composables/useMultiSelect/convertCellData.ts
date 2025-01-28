@@ -1,20 +1,20 @@
 import dayjs from 'dayjs'
-import type { ColumnType, SelectOptionsType } from 'nocodb-sdk'
-import { UITypes } from 'nocodb-sdk'
-import type { AppInfo } from '~/composables/useGlobal'
-import { parseProp } from '#imports'
+import type { AttachmentType, ColumnType, LinkToAnotherRecordType, SelectOptionsType } from 'nocodb-sdk'
+import { UITypes, getDateFormat, getDateTimeFormat, populateUniqueFileName } from 'nocodb-sdk'
+import type { AppInfo } from '~/composables/useGlobal/types'
+import { extractEmail } from '~/helpers/parsers/parserHelpers'
 
 export default function convertCellData(
-  args: { to: UITypes; value: string; column: ColumnType; appInfo: AppInfo },
+  args: { to: UITypes; value: string; column: ColumnType; appInfo: AppInfo; files?: FileList | File[]; oldValue?: unknown },
   isMysql = false,
   isMultiple = false,
 ) {
-  const { to, value, column } = args
+  const { to, value, column, files = [], oldValue } = args
 
   const dateFormat = isMysql ? 'YYYY-MM-DD HH:mm:ss' : 'YYYY-MM-DD HH:mm:ssZ'
 
   // return null if value is empty
-  if (value === '') return null
+  if (value === '' && to !== UITypes.Attachment) return null
 
   switch (to) {
     case UITypes.SingleLineText:
@@ -55,27 +55,24 @@ export default function convertCellData(
         if (strval === 'false' || strval === '0' || strval === '') return false
       }
       return null
-    case UITypes.Date: {
-      const parsedDate = dayjs(value)
-      if (!parsedDate.isValid()) {
-        if (isMultiple) {
-          return null
-        } else {
-          throw new Error('Not a valid date')
-        }
-      }
-      return parsedDate.format('YYYY-MM-DD')
-    }
+    case UITypes.Date:
     case UITypes.DateTime: {
-      const parsedDateTime = dayjs(value)
-      if (!parsedDateTime.isValid()) {
+      let parsedDateOrDateTime = dayjs(value, getDateTimeFormat(value))
+
+      if (!parsedDateOrDateTime.isValid()) {
+        parsedDateOrDateTime = dayjs(value, getDateFormat(value))
+      }
+
+      if (!parsedDateOrDateTime.isValid()) {
         if (isMultiple) {
           return null
         } else {
-          throw new Error('Not a valid datetime value')
+          throw new Error(`Not a valid '${to}' value`)
         }
       }
-      return parsedDateTime.utc().format('YYYY-MM-DD HH:mm:ssZ')
+      return to === UITypes.Date
+        ? parsedDateOrDateTime.format('YYYY-MM-DD')
+        : parsedDateOrDateTime.utc().format('YYYY-MM-DD HH:mm:ssZ')
     }
     case UITypes.Time: {
       let parsedTime = dayjs(value)
@@ -113,20 +110,34 @@ export default function convertCellData(
       }
     }
     case UITypes.Attachment: {
-      let parsedVal
-      try {
-        parsedVal = parseProp(value)
-        parsedVal = Array.isArray(parsedVal) ? parsedVal : [parsedVal]
-      } catch (e) {
-        if (isMultiple) {
-          return null
-        } else {
-          throw new Error('Invalid attachment data')
-        }
+      const parsedOldValue = parseProp(oldValue)
+      const oldAttachments = parsedOldValue && Array.isArray(parsedOldValue) ? parsedOldValue : []
+
+      if (!value && !files.length) {
+        if (oldAttachments.length) return undefined
+        return null
       }
 
-      if (parsedVal.some((v: any) => v && !(v.url || v.data || v.path))) {
-        return null
+      let parsedVal = []
+      if (value) {
+        try {
+          parsedVal = parseProp(value)
+          parsedVal = Array.isArray(parsedVal)
+            ? parsedVal
+            : typeof parsedVal === 'object' && Object.keys(parsedVal).length
+            ? [parsedVal]
+            : []
+        } catch (e) {
+          if (isMultiple) {
+            return null
+          } else {
+            throw new Error('Invalid attachment data')
+          }
+        }
+
+        if (parsedVal.some((v: any) => v && !(v.url || v.data || v.path))) {
+          return null
+        }
       }
 
       // TODO(refactor): duplicate logic in attachment/utils.ts
@@ -135,7 +146,7 @@ export default function convertCellData(
           // Maximum Number of Attachments per cell
           maxNumberOfAttachments: Math.max(1, +args.appInfo.ncMaxAttachmentsAllowed || 50) || 50,
           // Maximum File Size per file
-          maxAttachmentSize: Math.max(1, +args.appInfo.ncMaxAttachmentsAllowed || 20) || 20,
+          maxAttachmentSize: Math.max(1, +args.appInfo.ncAttachmentFieldSize || 20) || 20,
           supportedAttachmentMimeTypes: ['*'],
         }),
       }
@@ -147,7 +158,7 @@ export default function convertCellData(
 
       const attachments = []
 
-      for (const attachment of parsedVal) {
+      for (const attachment of value ? parsedVal : files) {
         if (args.appInfo.ee) {
           // verify number of files
           if (parsedVal.length > attachmentMeta.maxNumberOfAttachments) {
@@ -164,7 +175,6 @@ export default function convertCellData(
             message.error(`The size of ${attachment.name} exceeds the maximum file size ${attachmentMeta.maxAttachmentSize} MB.`)
             continue
           }
-
           // verify mime type
           if (
             !attachmentMeta.supportedAttachmentMimeTypes.includes('*') &&
@@ -179,7 +189,27 @@ export default function convertCellData(
         attachments.push(attachment)
       }
 
-      return JSON.stringify(attachments)
+      if (oldAttachments.length && !attachments.length) {
+        return undefined
+      } else if (value && attachments.length) {
+        const newAttachments: AttachmentType[] = []
+
+        for (const att of attachments) {
+          newAttachments.push({
+            ...att,
+            title: populateUniqueFileName(
+              att?.title,
+              [...oldAttachments, ...newAttachments].map((fn) => fn?.title || fn?.fileName),
+              att?.mimetype,
+            ),
+          })
+        }
+        return JSON.stringify([...oldAttachments, ...newAttachments])
+      } else if (files.length && attachments.length) {
+        return attachments
+      } else {
+        return null
+      }
     }
     case UITypes.SingleSelect:
     case UITypes.MultiSelect: {
@@ -195,7 +225,9 @@ export default function convertCellData(
 
       return validVals.join(',')
     }
-    case UITypes.User: {
+    case UITypes.User:
+    case UITypes.CreatedBy:
+    case UITypes.LastModifiedBy: {
       let parsedVal
       try {
         try {
@@ -213,7 +245,58 @@ export default function convertCellData(
 
       return parsedVal || value
     }
-    case UITypes.LinkToAnotherRecord:
+    case UITypes.LinkToAnotherRecord: {
+      if (isMultiple) {
+        return undefined
+      }
+
+      if (isBt(column) || isOo(column)) {
+        const parsedVal = typeof value === 'string' ? JSON.parse(value) : value
+
+        if (
+          !(parsedVal && typeof parsedVal === 'object' && !Array.isArray(parsedVal) && Object.keys(parsedVal)) ||
+          parsedVal?.fk_related_model_id !== (column.colOptions as LinkToAnotherRecordType)?.fk_related_model_id
+        ) {
+          throw new Error(`Unsupported conversion for ${to}`)
+        }
+
+        return parsedVal
+      } else {
+        throw new Error(`Unsupported conversion for ${to}`)
+      }
+    }
+    case UITypes.Links: {
+      if (isMultiple) {
+        return undefined
+      }
+
+      if (isMm(column)) {
+        const parsedVal = typeof value === 'string' ? JSON.parse(value) : value
+
+        if (
+          !(
+            parsedVal &&
+            typeof parsedVal === 'object' &&
+            !Array.isArray(parsedVal) &&
+            // eslint-disable-next-line no-prototype-builtins
+            ['rowId', 'columnId', 'fk_related_model_id', 'value'].every((key) => (parsedVal as Object).hasOwnProperty(key))
+          ) ||
+          parsedVal?.fk_related_model_id !== (column.colOptions as LinkToAnotherRecordType).fk_related_model_id
+        ) {
+          throw new Error(`Unsupported conversion for ${to}`)
+        }
+
+        return parsedVal
+      } else {
+        throw new Error(`Unsupported conversion for ${to}`)
+      }
+    }
+    case UITypes.Email: {
+      if (parseProp(column.meta).validate) {
+        return extractEmail(value) || value
+      }
+      return value
+    }
     case UITypes.Lookup:
     case UITypes.Rollup:
     case UITypes.Formula:

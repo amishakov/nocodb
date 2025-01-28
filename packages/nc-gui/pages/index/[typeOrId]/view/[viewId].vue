@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { definePageMeta, extractSdkResponseErrorMsg, message, ref, useRoute, useSharedView } from '#imports'
+import { ViewTypes } from 'nocodb-sdk'
 
 definePageMeta({
   public: true,
@@ -10,7 +10,7 @@ definePageMeta({
 
 const route = useRoute()
 
-const { loadSharedView, meta } = useSharedView()
+const { loadSharedView, meta, triggerNotFound } = useSharedView()
 const { isViewDataLoading } = storeToRefs(useViewsStore())
 
 provide(MetaInj, meta)
@@ -24,6 +24,8 @@ onMounted(async () => {
   } catch (e: any) {
     if (e?.response?.status === 403) {
       showPassword.value = true
+    } else if (e?.response?.status === 404) {
+      triggerNotFound()
     } else {
       console.error(e)
       message.error(await extractSdkResponseErrorMsg(e))
@@ -39,5 +41,5 @@ onMounted(async () => {
     <LazySharedViewAskPassword v-model="showPassword" />
   </div>
 
-  <LazySharedViewGrid v-else-if="meta" />
+  <LazySharedViewGrid v-else-if="meta" :view-type="ViewTypes.GRID" />
 </template>

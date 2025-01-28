@@ -17,9 +17,12 @@ import { RowHeight } from './RowHeight';
 import { MapPage } from '../../Map';
 import { getTextExcludeIconText } from '../../../../tests/utils/general';
 import { ToolbarGroupByPage } from './Groupby';
+import { ToolbarCalendarViewModePage } from './CalendarViewMode';
+import { CalendarPage } from '../../Calendar';
+import { ToolbarCalendarRangePage } from './CalendarRange';
 
 export class ToolbarPage extends BasePage {
-  readonly parent: GridPage | GalleryPage | FormPage | KanbanPage | MapPage;
+  readonly parent: GridPage | GalleryPage | FormPage | KanbanPage | MapPage | CalendarPage;
   readonly fields: ToolbarFieldsPage;
   readonly sort: ToolbarSortPage;
   readonly filter: ToolbarFilterPage;
@@ -30,14 +33,18 @@ export class ToolbarPage extends BasePage {
   readonly addEditStack: ToolbarAddEditStackPage;
   readonly searchData: ToolbarSearchDataPage;
   readonly rowHeight: RowHeight;
+  readonly calendarViewMode: ToolbarCalendarViewModePage;
+  readonly calendarRange: ToolbarCalendarRangePage;
 
   readonly btn_fields: Locator;
   readonly btn_sort: Locator;
   readonly btn_filter: Locator;
   readonly btn_rowHeight: Locator;
   readonly btn_groupBy: Locator;
+  readonly btn_calendarSettings: Locator;
+  readonly today_btn: Locator;
 
-  constructor(parent: GridPage | GalleryPage | FormPage | KanbanPage | MapPage) {
+  constructor(parent: GridPage | GalleryPage | FormPage | KanbanPage | MapPage | CalendarPage) {
     super(parent.rootPage);
     this.parent = parent;
     this.fields = new ToolbarFieldsPage(this);
@@ -50,12 +57,17 @@ export class ToolbarPage extends BasePage {
     this.addEditStack = new ToolbarAddEditStackPage(this);
     this.searchData = new ToolbarSearchDataPage(this);
     this.rowHeight = new RowHeight(this);
+    this.calendarViewMode = new ToolbarCalendarViewModePage(this);
+    this.calendarRange = new ToolbarCalendarRangePage(this);
 
     this.btn_fields = this.get().locator(`button.nc-fields-menu-btn`);
     this.btn_sort = this.get().locator(`button.nc-sort-menu-btn`);
     this.btn_filter = this.get().locator(`button.nc-filter-menu-btn`);
     this.btn_rowHeight = this.get().locator(`button.nc-height-menu-btn`);
     this.btn_groupBy = this.get().locator(`button.nc-group-by-menu-btn`);
+    this.btn_calendarSettings = this.get().getByTestId('nc-calendar-range-btn');
+
+    this.today_btn = this.get().getByTestId('nc-calendar-today-btn');
   }
 
   get() {
@@ -69,6 +81,21 @@ export class ToolbarPage extends BasePage {
 
     // Wait for the menu to close
     if (menuOpen) await this.fields.get().waitFor({ state: 'hidden' });
+  }
+
+  async clickCalendarViewSettings() {
+    const menuOpen = await this.calendarRange.get().isVisible();
+    await this.rootPage.waitForTimeout(500);
+    await this.btn_calendarSettings.click({
+      force: true,
+    });
+
+    // Wait for the menu to close
+    if (menuOpen) await this.calendarRange.get().waitFor({ state: 'hidden' });
+  }
+
+  async getActiveDate() {
+    return this.get().getByTestId('nc-calendar-active-date').textContent();
   }
 
   async clickFields() {
@@ -128,6 +155,12 @@ export class ToolbarPage extends BasePage {
     }
   }
 
+  async verifyActiveCalendarView({ view }: { view: string }) {
+    const activeView = this.get().getByTestId('nc-active-calendar-view');
+
+    await expect(activeView).toContainText(view);
+  }
+
   async clickFilter({
     // `networkValidation` is used to verify that api calls are made when the button is clicked
     // which happens when the filter is opened for the first time
@@ -162,31 +195,13 @@ export class ToolbarPage extends BasePage {
     await this.get().locator(`.nc-toolbar-btn.nc-add-new-row-btn`).click();
   }
 
-  async clickDownload(type: string, verificationFile = 'expectedData.txt') {
-    await this.get().locator(`.nc-toolbar-btn.nc-actions-menu-btn`).click();
-
-    const [download] = await Promise.all([
-      // Start waiting for the download
-      this.rootPage.waitForEvent('download'),
-      // Perform the action that initiates download
-      this.rootPage
-        .locator(`.nc-dropdown-actions-menu`)
-        .locator(`li.ant-dropdown-menu-item:has-text("${type}")`)
-        .click(),
-    ]);
-
-    // Save downloaded file somewhere
-    await download.saveAs('./output/at.txt');
-
-    // verify downloaded content against expected content
-    const expectedData = fs.readFileSync(`./fixtures/${verificationFile}`, 'utf8').replace(/\r/g, '').split('\n');
-    const file = fs.readFileSync('./output/at.txt', 'utf8').replace(/\r/g, '').split('\n');
-    expect(file).toEqual(expectedData);
-  }
-
   async clickRowHeight() {
     // ant-btn nc-height-menu-btn nc-toolbar-btn
     await this.get().locator(`.nc-toolbar-btn.nc-height-menu-btn`).click();
+  }
+
+  async clickToday() {
+    await this.today_btn.click();
   }
 
   async verifyStackByButton({ title }: { title: string }) {
@@ -208,8 +223,8 @@ export class ToolbarPage extends BasePage {
     const menuItems = {
       creator: ['Download', 'Upload'],
       editor: ['Download', 'Upload'],
-      commenter: ['Download CSV', 'Download Excel'],
-      viewer: ['Download CSV', 'Download Excel'],
+      commenter: ['CSV', 'Excel'],
+      viewer: ['CSV', 'Excel'],
     };
     const vMenu = this.rootPage.locator('.nc-dropdown-actions-menu:visible');
     for (const item of menuItems[param.role.toLowerCase()]) {
@@ -233,19 +248,64 @@ export class ToolbarPage extends BasePage {
     expect(await this.btn_rowHeight.count()).toBe(1);
   }
 
+  getToolbarBtns() {
+    return [
+      {
+        locator: this.btn_fields,
+        dropdownLocator: this.rootPage.locator('.nc-dropdown.nc-dropdown-fields-menu'),
+      },
+      {
+        locator: this.btn_filter,
+        dropdownLocator: this.rootPage.locator('.nc-dropdown.nc-dropdown-filter-menu'),
+      },
+      {
+        locator: this.btn_sort,
+        dropdownLocator: this.rootPage.locator('.nc-dropdown.nc-dropdown-sort-menu'),
+      },
+      {
+        locator: this.btn_groupBy,
+        dropdownLocator: this.rootPage.locator('.nc-dropdown.nc-dropdown-group-by-menu'),
+      },
+      {
+        locator: this.btn_rowHeight,
+        dropdownLocator: this.rootPage.locator('.ant-dropdown.nc-dropdown-height-menu'),
+      },
+    ];
+  }
+
   async verifyLockMode() {
-    await expect(this.btn_fields).toBeDisabled();
-    await expect(this.btn_filter).toBeDisabled();
-    await expect(this.btn_sort).toBeDisabled();
-    await expect(this.btn_groupBy).toBeDisabled();
-    await expect(this.btn_rowHeight).toBeDisabled();
+    for (const menu of this.getToolbarBtns()) {
+      await menu.locator.click();
+
+      await menu.dropdownLocator.waitFor({ state: 'visible' });
+
+      const lockedViewFooter = menu.dropdownLocator.locator('.nc-locked-view-footer');
+
+      await expect(lockedViewFooter).toBeVisible();
+    }
+  }
+
+  async verifyPersonalMode() {
+    for (const menu of this.getToolbarBtns()) {
+      await menu.locator.click();
+
+      await menu.dropdownLocator.waitFor({ state: 'visible' });
+
+      const lockedViewFooter = menu.dropdownLocator.locator('.nc-locked-view-footer');
+
+      await expect(lockedViewFooter).toBeVisible();
+    }
   }
 
   async verifyCollaborativeMode() {
-    await expect(this.btn_fields).toBeEnabled();
-    await expect(this.btn_filter).toBeEnabled();
-    await expect(this.btn_sort).toBeEnabled();
-    await expect(this.btn_groupBy).toBeEnabled();
-    await expect(this.btn_rowHeight).toBeEnabled();
+    for (const menu of this.getToolbarBtns()) {
+      await menu.locator.click();
+
+      await menu.dropdownLocator.waitFor({ state: 'visible' });
+
+      const lockedViewFooter = menu.dropdownLocator.locator('.nc-locked-view-footer');
+
+      await expect(lockedViewFooter).toBeHidden();
+    }
   }
 }

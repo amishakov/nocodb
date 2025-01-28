@@ -20,9 +20,6 @@ test.describe('Share form', () => {
 
   test('Survey', async () => {
     if (enableQuickRun()) test.skip();
-
-    // close 'Team & Auth' tab
-    await dashboard.closeTab({ title: 'Team & Auth' });
     await dashboard.treeView.openTable({ title: 'Country' });
 
     await dashboard.viewSidebar.createFormView({
@@ -38,6 +35,8 @@ test.describe('Share form', () => {
     await dashboard.form.showAnotherFormRadioButton.click();
     await dashboard.form.showAnotherFormAfter5SecRadioButton.click();
 
+    await dashboard.rootPage.waitForTimeout(200);
+
     const surveyLink = await dashboard.form.topbar.getSharedViewUrl(true);
     await dashboard.rootPage.waitForTimeout(2000);
     await dashboard.rootPage.goto(surveyLink);
@@ -46,9 +45,15 @@ test.describe('Share form', () => {
     await dashboard.rootPage.waitForTimeout(2000);
 
     surveyForm = new SurveyFormPage(dashboard.rootPage);
-    await surveyForm.validate({
+
+    await surveyForm.validateHeaders({
       heading: 'Country Title',
       subHeading: 'Country Form Subtitle',
+    });
+
+    await surveyForm.clickFillForm();
+
+    await surveyForm.validate({
       fieldLabel: 'Country *',
       footer: '1 / 3',
     });
@@ -59,8 +64,6 @@ test.describe('Share form', () => {
     });
 
     await surveyForm.validate({
-      heading: 'Country Title',
-      subHeading: 'Country Form Subtitle',
       fieldLabel: 'LastUpdate',
       footer: '2 / 3',
     });
@@ -70,17 +73,16 @@ test.describe('Share form', () => {
     });
 
     await surveyForm.validate({
-      heading: 'Country Title',
-      subHeading: 'Country Form Subtitle',
       fieldLabel: 'Cities',
       footer: '3 / 3',
     });
-    await surveyForm.submitButton.click();
+    await surveyForm.confirmAndSubmit();
 
     // validate post submit data
     await surveyForm.validateSuccessMessage({
       message: 'Thank you for submitting the form',
       showAnotherForm: true,
+      isCustomMsg: true,
     });
   });
 });

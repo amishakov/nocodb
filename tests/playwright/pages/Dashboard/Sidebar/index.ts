@@ -41,10 +41,10 @@ export class SidebarPage extends BasePage {
     }
   }
 
-  async verifyQuickActions({ isVisible }: { isVisible: boolean }) {
-    if (isVisible) await expect(this.get().getByTestId('nc-sidebar-search-btn')).toBeVisible();
-    else await expect(this.get().getByTestId('nc-sidebar-search-btn')).toHaveCount(0);
-  }
+  // async verifyQuickActions({ isVisible }: { isVisible: boolean }) {
+  //   if (isVisible) await expect(this.get().getByTestId('nc-sidebar-search-btn')).toBeVisible();
+  //   else await expect(this.get().getByTestId('nc-sidebar-search-btn')).toHaveCount(0);
+  // }
 
   async verifyTeamAndSettings({ isVisible }: { isVisible: boolean }) {
     if (isVisible) await expect(this.get().getByTestId('nc-sidebar-team-settings-btn')).toBeVisible();
@@ -63,19 +63,37 @@ export class SidebarPage extends BasePage {
     await this.rootPage.waitForTimeout(1000);
   }
 
-  async createProject({ title, type }: { title: string; type: ProjectTypes }) {
+  async createProject({
+    title,
+    type,
+    networkValidation = true,
+  }: {
+    title: string;
+    type: ProjectTypes;
+    networkValidation?: boolean;
+  }) {
     await this.createProjectBtn.click();
     if (type === ProjectTypes.DOCUMENTATION) {
       await this.dashboard.get().locator('.nc-create-base-btn-docs').click();
     }
+    /*
+    TODO uncomment when AI Features are enabled by default
+
+    await this.rootPage.locator('.nc-create-base').waitFor();
+    await this.rootPage.locator('.nc-create-base').click();
+    */
     await this.dashboard.get().locator('.nc-metadb-base-name').clear();
     await this.dashboard.get().locator('.nc-metadb-base-name').fill(title);
 
-    await this.waitForResponse({
-      uiAction: () => this.dashboard.get().getByTestId('docs-create-proj-dlg-create-btn').click(),
-      httpMethodsToMatch: ['POST'],
-      requestUrlPathToMatch: `/api/v1/db/meta/projects/`,
-    });
+    if (networkValidation) {
+      await this.waitForResponse({
+        uiAction: () => this.dashboard.get().getByTestId('docs-create-proj-dlg-create-btn').click(),
+        httpMethodsToMatch: ['POST'],
+        requestUrlPathToMatch: `/api/v1/db/meta/projects/`,
+      });
+    } else {
+      await this.dashboard.get().getByTestId('docs-create-proj-dlg-create-btn').click();
+    }
 
     if (type === ProjectTypes.DOCUMENTATION) {
       await this.dashboard.docs.pagesList.waitForOpen({ title });
@@ -86,6 +104,8 @@ export class SidebarPage extends BasePage {
     const createViewButtonOfActiveProject = this.dashboard
       .get()
       .locator('.nc-table-node-wrapper[data-active="true"] .nc-create-view-btn');
+
+    await createViewButtonOfActiveProject.waitFor({ state: 'visible' });
     await createViewButtonOfActiveProject.scrollIntoViewIfNeeded();
     await createViewButtonOfActiveProject.click();
 
@@ -100,6 +120,8 @@ export class SidebarPage extends BasePage {
       createViewTypeButton = this.rootPage.getByTestId('sidebar-view-create-kanban');
     } else if (type === ViewTypes.GALLERY) {
       createViewTypeButton = this.rootPage.getByTestId('sidebar-view-create-gallery');
+    } else if (type === ViewTypes.CALENDAR) {
+      createViewTypeButton = this.rootPage.getByTestId('sidebar-view-create-calendar');
     }
 
     await this.rootPage.waitForTimeout(750);

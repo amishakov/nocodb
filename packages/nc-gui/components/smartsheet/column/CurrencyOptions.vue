@@ -1,10 +1,5 @@
 <script setup lang="ts">
-import { computed, currencyCodes, currencyLocales, useVModel, validateCurrencyCode, validateCurrencyLocale } from '#imports'
-
-interface Option {
-  label: string
-  value: string
-}
+import { UITypes } from 'nocodb-sdk'
 
 const props = defineProps<{
   value: any
@@ -60,15 +55,14 @@ const message = computed(() => {
   return ''
 })
 
-function filterOption(input: string, option: Option) {
-  return option.value.toUpperCase().includes(input.toUpperCase())
+function filterOption(input: string, option: { value: string; key: string }) {
+  return searchCompare([option.value, option.key], input)
 }
 
 // set default value
 vModel.value.meta = {
-  currency_locale: 'en-US',
-  currency_code: 'USD',
-  ...vModel.value.meta,
+  ...columnDefaultMeta[UITypes.Currency],
+  ...(vModel.value.meta || {}),
 }
 
 currencyLocales().then((locales) => {
@@ -77,7 +71,7 @@ currencyLocales().then((locales) => {
 </script>
 
 <template>
-  <a-row gutter="8">
+  <a-row :gutter="8">
     <a-col :span="12">
       <a-form-item v-bind="validateInfos['meta.currency_locale']" :label="$t('title.currencyLocale')">
         <a-select
@@ -88,7 +82,9 @@ currencyLocales().then((locales) => {
           :disabled="isMoney && isPg"
           dropdown-class-name="nc-dropdown-currency-cell-locale"
         >
-          <a-select-option v-for="(currencyLocale, i) of currencyLocaleList" :key="i" :value="currencyLocale.value">
+          <template #suffixIcon> <GeneralIcon icon="arrowDown" class="text-gray-700" /> </template>
+
+          <a-select-option v-for="currencyLocale of currencyLocaleList" :key="currencyLocale.text" :value="currencyLocale.value">
             <div class="flex gap-2 w-full truncate items-center">
               <NcTooltip show-on-truncate-only class="flex-1 truncate">
                 <template #title>{{ currencyLocale.text }}</template>
@@ -117,6 +113,8 @@ currencyLocales().then((locales) => {
           :disabled="isMoney && isPg"
           dropdown-class-name="nc-dropdown-currency-cell-code"
         >
+          <template #suffixIcon> <GeneralIcon icon="arrowDown" class="text-gray-700" /> </template>
+
           <a-select-option v-for="(currencyCode, i) of currencyList" :key="i" :value="currencyCode">
             <div class="flex gap-2 w-full justify-between items-center">
               {{ currencyCode }}

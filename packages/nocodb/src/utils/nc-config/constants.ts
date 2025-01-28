@@ -25,7 +25,7 @@ export const defaultConnectionConfig: any = {
 export const defaultConnectionOptions = {
   pool: {
     min: 0,
-    max: 10,
+    max: +process.env.NC_DB_POOL_MAX || 10,
   },
 };
 
@@ -77,8 +77,10 @@ export const knownQueryParams = [
 
 export enum DriverClient {
   MYSQL = 'mysql2',
+  MYSQL_LEGACY = 'mysql',
   MSSQL = 'mssql',
   PG = 'pg',
   SQLITE = 'sqlite3',
   SNOWFLAKE = 'snowflake',
+  DATABRICKS = 'databricks',
 }

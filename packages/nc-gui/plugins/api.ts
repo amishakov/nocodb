@@ -1,8 +1,12 @@
-import { defineNuxtPlugin, isEeUI, useApi } from '#imports'
-
 const apiPlugin = (nuxtApp) => {
   /** injects a global api instance */
   nuxtApp.provide('api', useApi().api)
+}
+
+declare module '#app' {
+  interface NuxtApp {
+    $api: ReturnType<typeof createApiInstance>
+  }
 }
 
 export { apiPlugin }

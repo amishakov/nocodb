@@ -1,3 +1,5 @@
+import { NO_SCOPE as SDK_NO_SCOPE } from 'nocodb-sdk'
+
 export const NOCO = 'noco'
 
 export const SYSTEM_COLUMNS = ['id', 'title', 'created_at', 'updated_at']
@@ -18,3 +20,7 @@ export const GROUP_BY_VARS = {
     __nc_false__: 'Unchecked',
   } as Record<string, string>,
 }
+
+export const INITIAL_LEFT_SIDEBAR_WIDTH = 288
+
+export const NO_SCOPE = SDK_NO_SCOPE

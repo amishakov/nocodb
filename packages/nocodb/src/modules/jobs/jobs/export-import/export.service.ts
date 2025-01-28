@@ -1,18 +1,34 @@
 import { Readable } from 'stream';
-import { isLinksOrLTAR, UITypes, ViewTypes } from 'nocodb-sdk';
+import {
+  isLinksOrLTAR,
+  LongTextAiMetaProp,
+  RelationTypes,
+  UITypes,
+  ViewTypes,
+} from 'nocodb-sdk';
 import { unparse } from 'papaparse';
 import debug from 'debug';
 import { Injectable } from '@nestjs/common';
+import { NcApiVersion } from 'nocodb-sdk';
 import { elapsedTime, initTime } from '../../helpers';
 import type { BaseModelSqlv2 } from '~/db/BaseModelSqlv2';
-import type { View } from '~/models';
+import type { NcContext } from '~/interface/config';
+import type { LinkToAnotherRecordColumn } from '~/models';
+import { Base, Comment, Filter, Hook, Model, Source, View } from '~/models';
 import NcConnectionMgrv2 from '~/utils/common/NcConnectionMgrv2';
-import { getViewAndModelByAliasOrId } from '~/modules/datas/helpers';
-import { clearPrefix, generateBaseIdMap } from '~/helpers/exportImportHelpers';
+import {
+  getViewAndModelByAliasOrId,
+  serializeCellValue,
+} from '~/helpers/dataHelpers';
+import {
+  clearPrefix,
+  generateBaseIdMap,
+  getEntityIdentifier,
+} from '~/helpers/exportImportHelpers';
 import NcPluginMgrv2 from '~/helpers/NcPluginMgrv2';
 import { NcError } from '~/helpers/catchError';
 import { DatasService } from '~/services/datas.service';
-import { Base, Hook, Model, Source } from '~/models';
+import { parseMetaProp } from '~/utils/modelUtils';
 
 @Injectable()
 export class ExportService {
@@ -20,17 +36,23 @@ export class ExportService {
 
   constructor(private datasService: DatasService) {}
 
-  async serializeModels(param: {
-    modelIds: string[];
-    excludeViews?: boolean;
-    excludeHooks?: boolean;
-    excludeData?: boolean;
-  }) {
+  async serializeModels(
+    context: NcContext,
+    param: {
+      modelIds: string[];
+      excludeViews?: boolean;
+      excludeHooks?: boolean;
+      excludeData?: boolean;
+      excludeComments?: boolean;
+    },
+  ) {
     const { modelIds } = param;
 
     const excludeData = param?.excludeData || false;
     const excludeViews = param?.excludeViews || false;
     const excludeHooks = param?.excludeHooks || false;
+    const excludeComments =
+      param?.excludeComments || param?.excludeData || false;
 
     const serializedModels = [];
 
@@ -42,28 +64,30 @@ export class ExportService {
     const modelsMap = new Map<string, Model[]>();
 
     for (const modelId of modelIds) {
-      const model = await Model.get(modelId);
+      const model = await Model.get(context, modelId);
 
       let pgSerialLastVal;
 
-      if (!model)
-        return NcError.badRequest(`Model not found for id '${modelId}'`);
+      if (!model) return NcError.tableNotFound(modelId);
 
       const fndProject = bases.find((p) => p.id === model.base_id);
-      const base = fndProject || (await Base.get(model.base_id));
+      const base = fndProject || (await Base.get(context, model.base_id));
 
       const fndBase = sources.find((b) => b.id === model.source_id);
-      const source = fndBase || (await Source.get(model.source_id));
+      const source = fndBase || (await Source.get(context, model.source_id));
 
       if (!fndProject) bases.push(base);
       if (!fndBase) sources.push(source);
 
       if (!modelsMap.has(source.id)) {
-        modelsMap.set(source.id, await generateBaseIdMap(source, idMap));
+        modelsMap.set(
+          source.id,
+          await generateBaseIdMap(context, source, idMap),
+        );
       }
 
-      await model.getColumns();
-      await model.getViews();
+      await model.getColumns(context);
+      await model.getViews(context);
 
       // if views are excluded, filter all views except default
       if (excludeViews) {
@@ -71,14 +95,14 @@ export class ExportService {
       }
 
       for (const column of model.columns) {
-        await column.getColOptions();
+        await column.getColOptions(context);
 
         // if data is not excluded, get currval for ai column (pg)
         if (!excludeData) {
           if (source.type === 'pg') {
             if (column.ai) {
               try {
-                const baseModel = await Model.getBaseModelSQL({
+                const baseModel = await Model.getBaseModelSQL(context, {
                   id: model.id,
                   viewId: null,
                   dbDriver: await NcConnectionMgrv2.get(source),
@@ -120,7 +144,32 @@ export class ExportService {
               case 'fk_rollup_column_id':
               case 'fk_qr_value_column_id':
               case 'fk_barcode_value_column_id':
+              case 'fk_model_id':
                 column.colOptions[k] = idMap.get(v as string);
+                break;
+              // Preserve the values on export
+              // We will keep these only within same workspace as integration is only available within same workspace
+              case 'fk_workspace_id':
+              case 'fk_integrations_id':
+              case 'model':
+                column.colOptions[k] = v;
+                break;
+              case 'output_column_ids':
+                column.colOptions[k] = ((v as string)?.split(',') || [])
+                  .map((id) => idMap.get(id))
+                  .join(',');
+                break;
+              case 'fk_target_view_id':
+                if (v) {
+                  const view = await View.get(context, v as string);
+                  idMap.set(
+                    view.id,
+                    `${source.base_id}::${source.id}::${getEntityIdentifier(
+                      view.fk_model_id,
+                    )}::${view.id}`,
+                  );
+                  column.colOptions[k] = idMap.get(v as string);
+                }
                 break;
               case 'options':
                 for (const o of column.colOptions['options']) {
@@ -129,21 +178,28 @@ export class ExportService {
                 }
                 break;
               case 'formula':
-                // rewrite formula_raw with aliases
-                column.colOptions['formula_raw'] = column.colOptions[k].replace(
-                  /\{\{.*?\}\}/gm,
-                  (match) => {
-                    const col = model.columns.find(
-                      (c) => c.id === match.slice(2, -2),
-                    );
-                    return `{${col?.title}}`;
-                  },
-                );
+                if (column.uidt === UITypes.Button) break;
 
-                column.colOptions[k] = column.colOptions[k].replace(
+                // rewrite formula_raw with aliases
+                column.colOptions['formula_raw'] = column.colOptions[
+                  k
+                ]?.replace(/\{\{.*?\}\}/gm, (match) => {
+                  const col = model.columns.find(
+                    (c) => c.id === match.slice(2, -2),
+                  );
+                  return `{${col?.title}}`;
+                });
+
+                column.colOptions[k] = column.colOptions[k]?.replace(
                   /(?<=\{\{).*?(?=\}\})/gm,
                   (match) => idMap.get(match),
                 );
+                break;
+              case 'fk_webhook_id':
+                column.colOptions[k] = idMap.get(v as string);
+                break;
+              case 'fk_script_id':
+                column.colOptions[k] = idMap.get(v as string);
                 break;
               case 'id':
               case 'created_at':
@@ -158,29 +214,67 @@ export class ExportService {
         // pg default value fix
         if (source.type === 'pg') {
           if (column.cdf) {
+            const cdf = column.cdf.toString();
             // check if column.cdf has unmatched single quotes
-            const matches = column.cdf.match(/'/g);
+            const matches = cdf.match(/'/g);
             if (matches && matches.length % 2 !== 0) {
               // if so remove after last single quote
-              const lastQuoteIndex = column.cdf.lastIndexOf("'");
-              column.cdf = column.cdf.substring(0, lastQuoteIndex);
+              const lastQuoteIndex = cdf.lastIndexOf("'");
+              column.cdf = cdf.substring(0, lastQuoteIndex);
             }
+          }
+        }
+
+        // Link column filters
+        if (isLinksOrLTAR(column)) {
+          const colOptions = column.colOptions as LinkToAnotherRecordColumn;
+          colOptions.filter = (await Filter.getFilterObject(context, {
+            linkColId: column.id,
+          })) as any;
+          if (colOptions.filter?.children?.length) {
+            const export_filters = [];
+            for (const fl of colOptions.filter.children) {
+              const tempFl = {
+                id: `${idMap.get(column.id)}::${fl.id}`,
+                fk_column_id: idMap.get(fl.fk_column_id),
+                fk_parent_id: `${idMap.get(column.id)}::${fl.fk_parent_id}`,
+                fk_link_col_id: idMap.get(column.id),
+                fk_value_col_id: fl.fk_value_col_id
+                  ? idMap.get(fl.fk_value_col_id)
+                  : null,
+                is_group: fl.is_group,
+                logical_op: fl.logical_op,
+                comparison_op: fl.comparison_op,
+                comparison_sub_op: fl.comparison_sub_op,
+                value: fl.value,
+              };
+              if (tempFl.is_group) {
+                delete tempFl.comparison_op;
+                delete tempFl.comparison_sub_op;
+                delete tempFl.value;
+              }
+              export_filters.push(tempFl);
+            }
+            colOptions.filter.children = export_filters;
           }
         }
       }
 
       for (const view of model.views) {
         idMap.set(view.id, `${idMap.get(model.id)}::${view.id}`);
-        await view.getColumns();
-        await view.getFilters();
-        await view.getSorts();
+        await view.getColumns(context);
+        await view.getFilters(context);
+        await view.getSorts(context);
         if (view.filter) {
           const export_filters = [];
           for (const fl of view.filter.children) {
             const tempFl = {
               id: `${idMap.get(view.id)}::${fl.id}`,
+              fk_parent_column_id: fl.fk_parent_column_id
+                ? idMap.get(fl.fk_parent_column_id)
+                : null,
               fk_column_id: idMap.get(fl.fk_column_id),
-              fk_parent_id: fl.fk_parent_id,
+              fk_parent_id: `${idMap.get(view.id)}::${fl.fk_parent_id}`,
               is_group: fl.is_group,
               logical_op: fl.logical_op,
               comparison_op: fl.comparison_op,
@@ -219,11 +313,11 @@ export class ExportService {
                 break;
               case 'meta':
                 if (view.type === ViewTypes.KANBAN) {
-                  const meta = JSON.parse(view.view.meta as string) as Record<
-                    string,
-                    any
-                  >;
+                  const meta = parseMetaProp(view.view) as Record<string, any>;
                   for (const [k, v] of Object.entries(meta)) {
+                    // keep non-array meta as it is
+                    if (!Array.isArray(v)) continue;
+
                     const colId = idMap.get(k as string);
                     for (const op of v) {
                       op.fk_column_id = idMap.get(op.fk_column_id);
@@ -235,6 +329,23 @@ export class ExportService {
                   view.view.meta = meta;
                 }
                 break;
+              case 'calendar_range':
+                if (view.type === ViewTypes.CALENDAR) {
+                  const range = view.view[k];
+                  view.view[k] = range.map(
+                    (r: {
+                      fk_to_column_id?: string;
+                      fk_from_column_id: string;
+                    }) => {
+                      return {
+                        fk_to_column_id: idMap.get(r.fk_to_column_id),
+                        fk_from_column_id: idMap.get(r.fk_from_column_id),
+                      };
+                    },
+                  );
+                }
+                break;
+
               case 'created_at':
               case 'updated_at':
               case 'fk_view_id':
@@ -251,12 +362,12 @@ export class ExportService {
       const serializedHooks = [];
 
       if (!excludeHooks) {
-        const hooks = await Hook.list({ fk_model_id: model.id });
+        const hooks = await Hook.list(context, { fk_model_id: model.id });
 
         for (const hook of hooks) {
           idMap.set(hook.id, `${idMap.get(hook.fk_model_id)}::${hook.id}`);
 
-          const hookFilters = await hook.getFilters();
+          const hookFilters = await hook.getFilters(context);
           const export_filters = [];
 
           if (hookFilters) {
@@ -294,15 +405,56 @@ export class ExportService {
         }
       }
 
+      const serializedComments = [];
+
+      if (!excludeComments) {
+        const READ_BATCH_SIZE = 100;
+        const comments: Comment[] = [];
+        let offset = 0;
+
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const batchComments = await Comment.listByModel(context, model.id, {
+            limit: READ_BATCH_SIZE + 1,
+            offset,
+          });
+
+          comments.push(...batchComments.slice(0, READ_BATCH_SIZE));
+
+          if (batchComments.length <= READ_BATCH_SIZE) break;
+          offset += READ_BATCH_SIZE;
+        }
+
+        for (const comment of comments) {
+          idMap.set(comment.id, `${idMap.get(model.id)}::${comment.id}`);
+
+          serializedComments.push({
+            id: idMap.get(comment.id),
+            fk_model_id: idMap.get(comment.fk_model_id),
+            row_id: comment.row_id,
+            comment: comment.comment,
+            parent_comment_id: comment.parent_comment_id
+              ? idMap.get(comment.parent_comment_id)
+              : null,
+            created_by: comment.created_by,
+            resolved_by: comment.resolved_by,
+            created_by_email: comment.created_by_email,
+            resolved_by_email: comment.resolved_by_email,
+          });
+        }
+      }
+
       serializedModels.push({
         model: {
           id: idMap.get(model.id),
           prefix: base.prefix,
           title: model.title,
           table_name: clearPrefix(model.table_name, base.prefix),
+          description: model.description,
           pgSerialLastVal,
           meta: model.meta,
           columns: model.columns.map((column) => ({
+            description: column.description,
             id: idMap.get(column.id),
             ai: column.ai,
             column_name: column.column_name,
@@ -325,6 +477,7 @@ export class ExportService {
           })),
         },
         views: model.views.map((view) => ({
+          description: view.description,
           id: idMap.get(view.id),
           is_default: view.is_default,
           type: view.type,
@@ -336,6 +489,7 @@ export class ExportService {
           filter: view.filter,
           sorts: view.sorts,
           lock_type: view.lock_type,
+          owned_by: view.owned_by,
           columns: view.columns.map((column) => {
             const {
               id,
@@ -356,60 +510,72 @@ export class ExportService {
           view: view.view,
         })),
         hooks: serializedHooks,
+        comments: serializedComments,
       });
     }
 
     return serializedModels;
   }
 
-  async streamModelDataAsCsv(param: {
-    dataStream: Readable;
-    linkStream: Readable;
-    baseId: string;
-    modelId: string;
-    viewId?: string;
-    handledMmList?: string[];
-    _fieldIds?: string[];
-  }) {
+  async streamModelDataAsCsv(
+    context: NcContext,
+    param: {
+      dataStream: Readable;
+      linkStream: Readable;
+      baseId: string;
+      modelId: string;
+      viewId?: string;
+      handledMmList?: string[];
+      _fieldIds?: string[];
+      ncSiteUrl?: string;
+      delimiter?: string;
+    },
+  ) {
     const { dataStream, linkStream, handledMmList } = param;
 
-    const { model, view } = await getViewAndModelByAliasOrId({
+    const dataExportMode = !linkStream;
+
+    const { model, view } = await getViewAndModelByAliasOrId(context, {
       baseName: param.baseId,
       tableName: param.modelId,
       viewName: param.viewId,
     });
 
-    const source = await Source.get(model.source_id);
+    const source = await Source.get(context, model.source_id);
 
-    await model.getColumns();
+    await model.getColumns(context);
 
     const btMap = new Map<string, string>();
 
-    for (const column of model.columns.filter(
-      (col) =>
-        col.uidt === UITypes.LinkToAnotherRecord &&
-        col.colOptions?.type === 'bt',
-    )) {
-      await column.getColOptions();
-      const fkCol = model.columns.find(
-        (c) => c.id === column.colOptions?.fk_child_column_id,
-      );
-      if (fkCol) {
-        // replace bt column with fk column if it is in _fieldIds
-        if (param._fieldIds && param._fieldIds.includes(column.id)) {
-          param._fieldIds.push(fkCol.id);
-          const btIndex = param._fieldIds.indexOf(column.id);
-          param._fieldIds.splice(btIndex, 1);
-        }
-
-        btMap.set(
-          fkCol.id,
-          `${column.base_id}::${column.source_id}::${column.fk_model_id}::${column.id}`,
+    if (!dataExportMode) {
+      for (const column of model.columns.filter(
+        (col) =>
+          col.uidt === UITypes.LinkToAnotherRecord &&
+          (col.colOptions?.type === RelationTypes.BELONGS_TO ||
+            (col.colOptions?.type === RelationTypes.ONE_TO_ONE &&
+              col.meta?.bt)),
+      )) {
+        await column.getColOptions(context);
+        const fkCol = model.columns.find(
+          (c) => c.id === column.colOptions?.fk_child_column_id,
         );
+        if (fkCol) {
+          // replace bt column with fk column if it is in _fieldIds
+          if (param._fieldIds && param._fieldIds.includes(column.id)) {
+            param._fieldIds.push(fkCol.id);
+            const btIndex = param._fieldIds.indexOf(column.id);
+            param._fieldIds.splice(btIndex, 1);
+          }
+
+          btMap.set(
+            fkCol.id,
+            `${column.base_id}::${column.source_id}::${column.fk_model_id}::${column.id}`,
+          );
+        }
       }
     }
 
-    const fields = param._fieldIds
+    let fields = param._fieldIds
       ? model.columns
           .filter((c) => param._fieldIds?.includes(c.id))
           .map((c) => c.title)
@@ -419,6 +585,16 @@ export class ExportService {
           .map((c) => c.title)
           .join(',');
 
+    if (dataExportMode) {
+      const viewCols = await view.getColumns(context);
+
+      fields = viewCols
+        .sort((a, b) => a.order - b.order)
+        .filter((c) => c.show)
+        .map((vc) => model.columns.find((c) => c.id === vc.fk_column_id).title)
+        .join(',');
+    }
+
     const mmColumns = param._fieldIds
       ? model.columns
           .filter((c) => param._fieldIds?.includes(c.id))
@@ -427,7 +603,7 @@ export class ExportService {
           (col) => isLinksOrLTAR(col) && col.colOptions?.type === 'mm',
         );
 
-    const hasLink = mmColumns.length > 0;
+    const hasLink = !dataExportMode && mmColumns.length > 0;
 
     dataStream.setEncoding('utf8');
 
@@ -453,10 +629,24 @@ export class ExportService {
                   row[colId] = v;
                 }
                 break;
+              case UITypes.LongText:
+                if (col.meta?.[LongTextAiMetaProp] && v) {
+                  try {
+                    row[colId] = JSON.stringify(v);
+                  } catch (e) {
+                    row[colId] = v;
+                  }
+                } else {
+                  row[colId] = v;
+                }
+                break;
               case UITypes.User:
+              case UITypes.CreatedBy:
+              case UITypes.LastModifiedBy:
                 if (v) {
                   const userIds = [];
-                  for (const user of v as { id: string }[]) {
+                  const userRecord = Array.isArray(v) ? v : [v];
+                  for (const user of userRecord) {
                     userIds.push(user.id);
                   }
                   row[colId] = userIds.join(',');
@@ -466,6 +656,7 @@ export class ExportService {
                 break;
               case UITypes.Formula:
               case UITypes.Lookup:
+              case UITypes.Button:
               case UITypes.Rollup:
               case UITypes.Barcode:
               case UITypes.QrCode:
@@ -482,7 +673,23 @@ export class ExportService {
       return { data };
     };
 
-    const baseModel = await Model.getBaseModelSQL({
+    const formatAndSerialize = async (data: any) => {
+      for (const row of data) {
+        for (const [k, v] of Object.entries(row)) {
+          const col = model.columns.find((c) => c.title === k);
+          if (col) {
+            row[k] = await serializeCellValue(context, {
+              value: v,
+              column: col,
+              siteUrl: param.ncSiteUrl,
+            });
+          }
+        }
+      }
+      return { data };
+    };
+
+    const baseModel = await Model.getBaseModelSQL(context, {
       id: model.id,
       viewId: view?.id,
       dbDriver: await NcConnectionMgrv2.get(source),
@@ -493,7 +700,8 @@ export class ExportService {
 
     try {
       await this.recursiveRead(
-        formatData,
+        context,
+        dataExportMode ? formatAndSerialize : formatData,
         baseModel,
         dataStream,
         model,
@@ -502,6 +710,8 @@ export class ExportService {
         limit,
         fields,
         true,
+        param.delimiter,
+        dataExportMode,
       );
     } catch (e) {
       this.debugLog(e);
@@ -511,12 +721,14 @@ export class ExportService {
     if (hasLink) {
       linkStream.setEncoding('utf8');
 
+      let streamedHeaders = false;
+
       for (const mm of mmColumns) {
         if (handledMmList.includes(mm.colOptions?.fk_mm_model_id)) continue;
 
-        const mmModel = await Model.get(mm.colOptions?.fk_mm_model_id);
+        const mmModel = await Model.get(context, mm.colOptions?.fk_mm_model_id);
 
-        await mmModel.getColumns();
+        await mmModel.getColumns(context);
 
         const childColumn = mmModel.columns.find(
           (col) => col.id === mm.colOptions?.fk_mm_child_column_id,
@@ -552,15 +764,16 @@ export class ExportService {
         const mmBase =
           mmModel.source_id === source.id
             ? source
-            : await Source.get(mmModel.source_id);
+            : await Source.get(context, mmModel.source_id);
 
-        const mmBaseModel = await Model.getBaseModelSQL({
+        const mmBaseModel = await Model.getBaseModelSQL(context, {
           id: mmModel.id,
           dbDriver: await NcConnectionMgrv2.get(mmBase),
         });
 
         try {
           await this.recursiveLinkRead(
+            context,
             mmFormatData,
             mmBaseModel,
             linkStream,
@@ -569,8 +782,11 @@ export class ExportService {
             mmOffset,
             mmLimit,
             mmFields,
-            true,
+            streamedHeaders ? false : true,
           );
+
+          // avoid writing headers for same model multiple times
+          streamedHeaders = true;
         } catch (e) {
           this.debugLog(e);
           throw e;
@@ -581,12 +797,13 @@ export class ExportService {
 
       linkStream.push(null);
     } else {
-      linkStream.push(null);
+      if (linkStream) linkStream.push(null);
     }
   }
 
   async recursiveRead(
-    formatter: (data: any) => { data: any },
+    context: NcContext,
+    formatter: (data: any) => { data: any } | Promise<{ data: any }>,
     baseModel: BaseModelSqlv2,
     stream: Readable,
     model: Model,
@@ -595,46 +812,86 @@ export class ExportService {
     limit: number,
     fields: string,
     header = false,
+    delimiter = ',',
+    dataExportMode = false,
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       this.datasService
-        .getDataList({
+        .getDataList(context, {
           model,
           view,
           query: { limit, offset, fields },
           baseModel,
-          ignoreViewFilterAndSort: true,
+          ignoreViewFilterAndSort: !dataExportMode,
+          limitOverride: limit,
         })
         .then((result) => {
           try {
             if (!header) {
               stream.push('\r\n');
             }
-            const { data } = formatter(result.list);
-            stream.push(unparse(data, { header }));
-            if (result.pageInfo.isLastPage) {
-              stream.push(null);
-              resolve();
+
+            // check if formatter is async
+            const formatterPromise = formatter(result.list);
+            if (formatterPromise instanceof Promise) {
+              formatterPromise.then(({ data }) => {
+                stream.push(unparse(data, { header, delimiter }));
+                if (result.pageInfo.isLastPage) {
+                  stream.push(null);
+                  resolve();
+                } else {
+                  this.recursiveRead(
+                    context,
+                    formatter,
+                    baseModel,
+                    stream,
+                    model,
+                    view,
+                    offset + limit,
+                    limit,
+                    fields,
+                    false,
+                    delimiter,
+                    dataExportMode,
+                  )
+                    .then(resolve)
+                    .catch(reject);
+                }
+              });
             } else {
-              this.recursiveRead(
-                formatter,
-                baseModel,
-                stream,
-                model,
-                view,
-                offset + limit,
-                limit,
-                fields,
-              ).then(resolve);
+              stream.push(unparse(formatterPromise.data, { header }));
+              if (result.pageInfo.isLastPage) {
+                stream.push(null);
+                resolve();
+              } else {
+                this.recursiveRead(
+                  context,
+                  formatter,
+                  baseModel,
+                  stream,
+                  model,
+                  view,
+                  offset + limit,
+                  limit,
+                  fields,
+                  false,
+                  delimiter,
+                  dataExportMode,
+                )
+                  .then(resolve)
+                  .catch(reject);
+              }
             }
           } catch (e) {
             reject(e);
           }
-        });
+        })
+        .catch(reject);
     });
   }
 
   async recursiveLinkRead(
+    context: NcContext,
     formatter: (data: any) => { data: any },
     baseModel: BaseModelSqlv2,
     linkStream: Readable,
@@ -647,12 +904,14 @@ export class ExportService {
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       this.datasService
-        .getDataList({
+        .getDataList(context, {
           model,
           view,
           query: { limit, offset, fields },
           baseModel,
           ignoreViewFilterAndSort: true,
+          limitOverride: limit,
+          apiVersion: NcApiVersion.V1,
         })
         .then((result) => {
           try {
@@ -665,6 +924,7 @@ export class ExportService {
               resolve();
             } else {
               this.recursiveLinkRead(
+                context,
                 formatter,
                 baseModel,
                 linkStream,
@@ -673,31 +933,36 @@ export class ExportService {
                 offset + limit,
                 limit,
                 fields,
-              ).then(resolve);
+              )
+                .then(resolve)
+                .catch(reject);
             }
           } catch (e) {
             reject(e);
           }
-        });
+        })
+        .catch(reject);
     });
   }
 
-  async exportBase(param: { path: string; sourceId: string }) {
+  async exportBase(
+    context: NcContext,
+    param: { path: string; sourceId: string },
+  ) {
     const hrTime = initTime();
 
-    const source = await Source.get(param.sourceId);
+    const source = await Source.get(context, param.sourceId);
 
-    if (!source)
-      throw NcError.badRequest(`Source not found for id '${param.sourceId}'`);
+    if (!source) NcError.sourceNotFound(param.sourceId);
 
-    const base = await Base.get(source.base_id);
+    const base = await Base.get(context, source.base_id);
 
-    const models = (await source.getModels()).filter(
+    const models = (await source.getModels(context)).filter(
       // TODO revert this when issue with cache is fixed
       (m) => m.source_id === source.id && !m.mm && m.type === 'table',
     );
 
-    const exportedModels = await this.serializeModels({
+    const exportedModels = await this.serializeModels(context, {
       modelIds: models.map((m) => m.id),
     });
 
@@ -775,7 +1040,7 @@ export class ExportService {
 
         let error = null;
 
-        this.streamModelDataAsCsv({
+        this.streamModelDataAsCsv(context, {
           dataStream,
           linkStream,
           baseId: base.id,

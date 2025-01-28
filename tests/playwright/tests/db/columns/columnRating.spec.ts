@@ -47,9 +47,6 @@ test.describe('Rating - cell, filter, sort', () => {
   });
 
   test('Rating', async () => {
-    // close 'Team & Auth' tab
-    await dashboard.closeTab({ title: 'Team & Auth' });
-
     await dashboard.treeView.createTable({ title: 'Sheet1', baseTitle: context.base.title });
 
     await dashboard.grid.addNewRow({ index: 0, value: '1a' });
@@ -66,9 +63,9 @@ test.describe('Rating - cell, filter, sort', () => {
     });
 
     // In cell insert
-    await dashboard.grid.cell.rating.select({ index: 0, columnHeader: 'rating', rating: 2 });
-    await dashboard.grid.cell.rating.select({ index: 2, columnHeader: 'rating', rating: 1 });
-    await dashboard.grid.cell.rating.select({ index: 5, columnHeader: 'rating', rating: 0 });
+    await dashboard.grid.cell.rating.select({ index: 0, columnHeader: 'rating', rating: 3 });
+    await dashboard.grid.cell.rating.select({ index: 2, columnHeader: 'rating', rating: 2 });
+    await dashboard.grid.cell.rating.select({ index: 5, columnHeader: 'rating', rating: 1 });
 
     // column values
     // 1a : 3

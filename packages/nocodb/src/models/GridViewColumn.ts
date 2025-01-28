@@ -1,4 +1,6 @@
 import type { BoolType, GridColumnType } from 'nocodb-sdk';
+import type { NcContext } from '~/interface/config';
+import type Upgrader from '~/Upgrader';
 import View from '~/models/View';
 import Noco from '~/Noco';
 import { extractProps } from '~/helpers/extractProps';
@@ -13,6 +15,7 @@ export default class GridViewColumn implements GridColumnType {
 
   fk_view_id: string;
   fk_column_id: string;
+  fk_workspace_id?: string;
   base_id?: string;
   source_id?: string;
 
@@ -20,11 +23,14 @@ export default class GridViewColumn implements GridColumnType {
   group_by_order?: number;
   group_by_sort?: string;
 
+  aggregation?: string;
+
   constructor(data: GridViewColumn) {
     Object.assign(this, data);
   }
 
   public static async list(
+    context: NcContext,
     viewId: string,
     ncMeta = Noco.ncMeta,
   ): Promise<GridViewColumn[]> {
@@ -34,14 +40,19 @@ export default class GridViewColumn implements GridColumnType {
     let { list: views } = cachedList;
     const { isNoneList } = cachedList;
     if (!isNoneList && !views.length) {
-      views = await ncMeta.metaList2(null, null, MetaTable.GRID_VIEW_COLUMNS, {
-        condition: {
-          fk_view_id: viewId,
+      views = await ncMeta.metaList2(
+        context.workspace_id,
+        context.base_id,
+        MetaTable.GRID_VIEW_COLUMNS,
+        {
+          condition: {
+            fk_view_id: viewId,
+          },
+          orderBy: {
+            order: 'asc',
+          },
         },
-        orderBy: {
-          order: 'asc',
-        },
-      });
+      );
       await NocoCache.setList(CacheScope.GRID_VIEW_COLUMN, [viewId], views);
     }
     views.sort(
@@ -52,29 +63,39 @@ export default class GridViewColumn implements GridColumnType {
     return views?.map((v) => new GridViewColumn(v));
   }
 
-  public static async get(gridViewColumnId: string, ncMeta = Noco.ncMeta) {
-    let view =
+  public static async get(
+    context: NcContext,
+    gridViewColumnId: string,
+    ncMeta = Noco.ncMeta,
+  ) {
+    let viewColumn =
       gridViewColumnId &&
       (await NocoCache.get(
         `${CacheScope.GRID_VIEW_COLUMN}:${gridViewColumnId}`,
         CacheGetType.TYPE_OBJECT,
       ));
-    if (!view) {
-      view = await ncMeta.metaGet2(
-        null,
-        null,
+    if (!viewColumn) {
+      viewColumn = await ncMeta.metaGet2(
+        context.workspace_id,
+        context.base_id,
         MetaTable.GRID_VIEW_COLUMNS,
         gridViewColumnId,
       );
-      await NocoCache.set(
-        `${CacheScope.GRID_VIEW_COLUMN}:${gridViewColumnId}`,
-        view,
-      );
+      if (viewColumn) {
+        await NocoCache.set(
+          `${CacheScope.GRID_VIEW_COLUMN}:${gridViewColumnId}`,
+          viewColumn,
+        );
+      }
     }
-    return view && new GridViewColumn(view);
+    return viewColumn && new GridViewColumn(viewColumn);
   }
 
-  static async insert(column: Partial<GridViewColumn>, ncMeta = Noco.ncMeta) {
+  static async insert(
+    context: NcContext,
+    column: Partial<GridViewColumn>,
+    ncMeta = Noco.ncMeta,
+  ) {
     const insertObj = extractProps(column, [
       'fk_view_id',
       'fk_column_id',
@@ -94,47 +115,48 @@ export default class GridViewColumn implements GridColumnType {
         fk_view_id: column.fk_view_id,
       }));
 
-    if (!(column.base_id && column.source_id)) {
-      const viewRef = await View.get(column.fk_view_id, ncMeta);
-      insertObj.base_id = viewRef.base_id;
+    if (!insertObj.source_id) {
+      const viewRef = await View.get(context, insertObj.fk_view_id, ncMeta);
       insertObj.source_id = viewRef.source_id;
     }
 
-    const { id, fk_column_id } = await ncMeta.metaInsert2(
-      null,
-      null,
+    insertObj.width = column?.width ?? '180px';
+
+    const { id } = await ncMeta.metaInsert2(
+      context.workspace_id,
+      context.base_id,
       MetaTable.GRID_VIEW_COLUMNS,
       insertObj,
     );
 
-    await NocoCache.set(`${CacheScope.GRID_VIEW_COLUMN}:${fk_column_id}`, id);
+    if (!(ncMeta as Upgrader).upgrader_mode) {
+      // TODO: optimize this function & try to avoid if possible
+      await View.fixPVColumnForView(context, column.fk_view_id, ncMeta);
+    }
 
-    // if cache is not present skip pushing it into the list to avoid unexpected behaviour
-    const { list } = await NocoCache.getList(CacheScope.GRID_VIEW_COLUMN, [
-      column.fk_view_id,
-    ]);
-    if (list.length)
+    // on new view column, delete any optimised single query cache
+    {
+      const view = await View.get(context, column.fk_view_id, ncMeta);
+      await View.clearSingleQueryCache(
+        context,
+        view.fk_model_id,
+        [view],
+        ncMeta,
+      );
+    }
+
+    return this.get(context, id, ncMeta).then(async (viewColumn) => {
       await NocoCache.appendToList(
         CacheScope.GRID_VIEW_COLUMN,
         [column.fk_view_id],
         `${CacheScope.GRID_VIEW_COLUMN}:${id}`,
       );
-
-    await View.fixPVColumnForView(column.fk_view_id, ncMeta);
-
-    // on new view column, delete any optimised single query cache
-    {
-      const view = await View.get(column.fk_view_id, ncMeta);
-      await NocoCache.delAll(
-        CacheScope.SINGLE_QUERY,
-        `${view.fk_model_id}:${view.id}:*`,
-      );
-    }
-
-    return this.get(id, ncMeta);
+      return viewColumn;
+    });
   }
 
   static async update(
+    context: NcContext,
     columnId: string,
     body: Partial<GridViewColumn>,
     ncMeta = Noco.ncMeta,
@@ -146,32 +168,32 @@ export default class GridViewColumn implements GridColumnType {
       'group_by',
       'group_by_order',
       'group_by_sort',
+      'aggregation',
     ]);
-    // get existing cache
-    const key = `${CacheScope.GRID_VIEW_COLUMN}:${columnId}`;
-    let o = await NocoCache.get(key, CacheGetType.TYPE_OBJECT);
-    if (o) {
-      // update data
-      o = { ...o, ...updateObj };
-      // set cache
-      await NocoCache.set(key, o);
-    }
+
     // set meta
     const res = await ncMeta.metaUpdate(
-      null,
-      null,
+      context.workspace_id,
+      context.base_id,
       MetaTable.GRID_VIEW_COLUMNS,
       updateObj,
       columnId,
     );
 
+    await NocoCache.update(
+      `${CacheScope.GRID_VIEW_COLUMN}:${columnId}`,
+      updateObj,
+    );
+
     // on view column update, delete any optimised single query cache
     {
-      const gridCol = await this.get(columnId, ncMeta);
-      const view = await View.get(gridCol.fk_view_id, ncMeta);
-      await NocoCache.delAll(
-        CacheScope.SINGLE_QUERY,
-        `${view.fk_model_id}:${view.id}:*`,
+      const gridCol = await this.get(context, columnId, ncMeta);
+      const view = await View.get(context, gridCol.fk_view_id, ncMeta);
+      await View.clearSingleQueryCache(
+        context,
+        view.fk_model_id,
+        [view],
+        ncMeta,
       );
     }
 

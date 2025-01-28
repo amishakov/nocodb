@@ -1,9 +1,4 @@
 {
-  "ts-node": {
-    "require": [
-      "tsconfig-paths/register"
-    ]
-  },
   "compilerOptions": {
     "module": "commonjs",
     "declaration": true,
@@ -12,6 +7,7 @@
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
     "target": "es2017",
+    "lib": ["es2019"],
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
@@ -26,18 +22,20 @@
     "esModuleInterop": true,
     "paths": {
       "src/*": [
-        "./src/*"
+        "src/*"
       ],
       "~/*": [
-        "./src/*"
+        "src/*"
       ],
       "@/*": [
-        "./src/*"
+        "src/*"
       ]
     },
     "typeRoots": [
-      "./src/types",
-      "./node_modules/@types"
+      "src/types",
+      "node_modules/@types"
     ]
-  }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["src/ee", "src/ee-on-prem", "src/ee-cloud", "**/*.spec.ts"]
 }

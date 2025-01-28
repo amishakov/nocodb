@@ -12,23 +12,26 @@ const isCopied = ref({
   embed: false,
 })
 
+const { copy } = useCopy()
+
 const openUrl = async () => {
   window.open(url.value, '_blank', 'noopener,noreferrer')
 }
 
 const embedHtml = async () => {
-  await navigator.clipboard.writeText(`<iframe src="${url.value}" width="100%" height="100%" style="border: none;"></iframe>`)
+  await copy(`<iframe src="${url.value}" width="100%" height="100%" style="border: none;"></iframe>`)
   isCopied.value.embed = true
 }
 
 const copyUrl = async () => {
   isCopied.value.link = false
 
-  await navigator.clipboard.writeText(url.value)
+  await copy(url.value)
+  isCopied.value.link = true
 
   setTimeout(() => {
-    isCopied.value.link = true
-  }, 100)
+    isCopied.value.link = false
+  }, 5000)
 }
 </script>
 

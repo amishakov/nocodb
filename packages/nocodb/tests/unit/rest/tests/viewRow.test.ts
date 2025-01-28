@@ -1,17 +1,19 @@
 import 'mocha';
 // @ts-ignore
+import assert from 'assert';
 import request from 'supertest';
-import { UITypes, ViewTypes } from 'nocodb-sdk';
+import { APIContext, UITypes, ViewTypes } from 'nocodb-sdk';
 import { expect } from 'chai';
 import init from '../../init';
 import { createProject, createSakilaProject } from '../../factory/base';
-import { createTable, getTable } from '../../factory/table';
-import { createView } from '../../factory/view';
+import { createTable, getAllTables, getTable } from '../../factory/table';
+import { createView, getView } from '../../factory/view';
 import {
   createColumn,
   createLookupColumn,
   createLtarColumn,
   createRollupColumn,
+  defaultColumns,
   updateViewColumn,
 } from '../../factory/column';
 import {
@@ -19,10 +21,12 @@ import {
   createRow,
   getOneRow,
   getRow,
+  listRow,
 } from '../../factory/row';
+import Model from '../../../../src/models/Model';
+import { getViewColumns, updateViewColumns } from '../../factory/viewColumns';
 import type { ColumnType } from 'nocodb-sdk';
 import type View from '../../../../src/models/View';
-import type Model from '../../../../src/models/Model';
 import type Base from '~/models/Base';
 
 // Test case list
@@ -37,21 +41,35 @@ const isColumnsCorrectInResponse = (row, columns: ColumnType[]) => {
 };
 
 let context;
+let sakilaCtx: {
+  workspace_id: string;
+  base_id: string;
+};
+let ctx: {
+  workspace_id: string;
+  base_id: string;
+};
 // bases
 let base: Base;
 let sakilaProject: Base;
 // models
 let customerTable: Model;
 let filmTable: Model;
+let rentalTable: Model;
+
 // columns
 let customerColumns;
 let filmColumns;
+let rentalColumns;
 // views
 let customerGridView: View;
 let customerGalleryView: View;
 let customerFormView: View;
 // use film table because it has single select field
 let filmKanbanView: View;
+
+// Use rental table because it has a date field
+let rentalCalendarView: View;
 
 const testGetViewRowList = async (view: View) => {
   const response = await request(context.app)
@@ -95,17 +113,40 @@ const testGetViewRowListKanban = async (view: View) => {
     .and.to.be.a('number');
 };
 
+const testGetViewListCalendar = async (view: View) => {
+  const response = await request(context.app)
+    .get(
+      `/api/v1/db/data/noco/${sakilaProject.id}/${rentalTable.id}/views/${view.id}`,
+    )
+    .set('xc-auth', context.token)
+    .expect(200);
+
+  const pageInfo = response.body.pageInfo;
+
+  if (pageInfo.totalRows !== 16044 && response.body.list.length !== 16044) {
+    throw new Error('Calendar View row list is not correct');
+  }
+};
+
 function viewRowStaticTests() {
   before(async function () {
     console.time('#### viewRowTests');
     context = await init();
     sakilaProject = await createSakilaProject(context);
     base = await createProject(context);
+    ctx = {
+      workspace_id: base.fk_workspace_id,
+      base_id: base.id,
+    };
+    sakilaCtx = {
+      workspace_id: sakilaProject.fk_workspace_id,
+      base_id: sakilaProject.id,
+    };
     customerTable = await getTable({
       base: sakilaProject,
       name: 'customer',
     });
-    customerColumns = await customerTable.getColumns();
+    customerColumns = await customerTable.getColumns(sakilaCtx);
     customerGridView = await createView(context, {
       title: 'Customer Gallery',
       table: customerTable,
@@ -126,12 +167,30 @@ function viewRowStaticTests() {
       base: sakilaProject,
       name: 'film',
     });
-    filmColumns = await filmTable.getColumns();
+    filmColumns = await filmTable.getColumns(sakilaCtx);
     filmKanbanView = await createView(context, {
       title: 'Film Kanban',
       table: filmTable,
       type: ViewTypes.KANBAN,
     });
+
+    rentalTable = await getTable({
+      base: sakilaProject,
+      name: 'rental',
+    });
+
+    rentalColumns = await rentalTable.getColumns(sakilaCtx);
+
+    rentalCalendarView = await createView(context, {
+      title: 'Rental Calendar',
+      table: rentalTable,
+      type: ViewTypes.CALENDAR,
+      range: {
+        fk_from_column_id: rentalColumns.find((c) => c.title === 'RentalDate')
+          .id,
+      },
+    });
+
     console.timeEnd('#### viewRowTests');
   });
 
@@ -146,6 +205,10 @@ function viewRowStaticTests() {
   });
   it('Get view row list grid', async () => {
     await testGetViewRowList(customerGridView);
+  });
+
+  it('Get view row list Calendar', async () => {
+    await testGetViewListCalendar(rentalCalendarView);
   });
 
   const testGetViewDataListWithRequiredColumns = async (view: View) => {
@@ -215,7 +278,7 @@ function viewRowStaticTests() {
       Object.keys(response.body.find((e) => e.key === 'NC-17').value.list[0])
         .sort()
         .join(','),
-    ).to.equal('FilmId,Title');
+    ).to.equal('Description,FilmId,Title');
   };
   it('Get grouped view data list with required columns kanban', async () => {
     await testGetGroupedViewDataListWithRequiredColumns(filmKanbanView);
@@ -426,11 +489,19 @@ function viewRowTests() {
     context = await init();
     sakilaProject = await createSakilaProject(context);
     base = await createProject(context);
+    ctx = {
+      workspace_id: base.fk_workspace_id,
+      base_id: base.id,
+    };
+    sakilaCtx = {
+      workspace_id: sakilaProject.fk_workspace_id,
+      base_id: sakilaProject.id,
+    };
     customerTable = await getTable({
       base: sakilaProject,
       name: 'customer',
     });
-    customerColumns = await customerTable.getColumns();
+    customerColumns = await customerTable.getColumns(sakilaCtx);
     customerGridView = await createView(context, {
       title: 'Customer Gallery',
       table: customerTable,
@@ -451,11 +522,28 @@ function viewRowTests() {
       base: sakilaProject,
       name: 'film',
     });
-    filmColumns = await filmTable.getColumns();
+    filmColumns = await filmTable.getColumns(sakilaCtx);
     filmKanbanView = await createView(context, {
       title: 'Film Kanban',
       table: filmTable,
       type: ViewTypes.KANBAN,
+    });
+
+    rentalTable = await getTable({
+      base: sakilaProject,
+      name: 'rental',
+    });
+
+    rentalColumns = await rentalTable.getColumns(sakilaCtx);
+
+    rentalCalendarView = await createView(context, {
+      title: 'Rental Calendar',
+      table: rentalTable,
+      type: ViewTypes.CALENDAR,
+      range: {
+        fk_from_column_id: rentalColumns.find((c) => c.title === 'RentalDate')
+          .id,
+      },
     });
     console.timeEnd('#### viewRowTests');
   });
@@ -554,6 +642,10 @@ function viewRowTests() {
     await testGetViewDataListWithRequiredColumnsAndFilter(ViewTypes.GRID);
   });
 
+  it('Get nested sorted filtered table data list with a lookup column Calendar', async function () {
+    await testGetViewDataListWithRequiredColumnsAndFilter(ViewTypes.CALENDAR);
+  });
+
   const testGetNestedSortedFilteredTableDataListWithLookupColumn = async (
     viewType: ViewTypes,
   ) => {
@@ -572,7 +664,7 @@ function viewRowTests() {
       relatedTableColumnTitle: 'RentalDate',
     });
 
-    const activeColumn = (await customerTable.getColumns()).find(
+    const activeColumn = (await customerTable.getColumns(sakilaCtx)).find(
       (c) => c.title === 'Active',
     );
 
@@ -657,6 +749,7 @@ function viewRowTests() {
 
   const testCreateRowView = async (viewType: ViewTypes) => {
     const table = await createTable(context, base);
+
     const view = await createView(context, {
       title: 'View',
       table: table,
@@ -691,8 +784,13 @@ function viewRowTests() {
     await testCreateRowView(ViewTypes.KANBAN);
   });
 
+  it('Create table row Calendar', async function () {
+    await testCreateRowView(ViewTypes.CALENDAR);
+  });
+
   const testCreateRowViewWithWrongView = async (viewType: ViewTypes) => {
     const table = await createTable(context, base);
+
     const nonRelatedView = await createView(context, {
       title: 'View',
       table: customerTable,
@@ -726,16 +824,22 @@ function viewRowTests() {
     await testCreateRowViewWithWrongView(ViewTypes.KANBAN);
   });
 
+  it('Create table row wrong calendar id', async function () {
+    await testCreateRowViewWithWrongView(ViewTypes.CALENDAR);
+  });
+
   // todo: Test that all the columns needed to be shown in the view are returned
 
   const testFindOneSortedDataWithRequiredColumns = async (
     viewType: ViewTypes,
   ) => {
+    const table = viewType === ViewTypes.CALENDAR ? rentalTable : customerTable;
     const view = await createView(context, {
       title: 'View',
-      table: customerTable,
+      table: table,
       type: viewType,
     });
+
     const firstNameColumn = customerColumns.find(
       (col) => col.title === 'FirstName',
     );
@@ -819,7 +923,7 @@ function viewRowTests() {
       attr: { show: true },
     });
 
-    const activeColumn = (await customerTable.getColumns()).find(
+    const activeColumn = (await customerTable.getColumns(sakilaCtx)).find(
       (c) => c.title === 'Active',
     );
 
@@ -954,6 +1058,9 @@ function viewRowTests() {
   it('Groupby desc sorted and with rollup view data  list with required columns GALLERY', async function () {
     await testGroupDescSorted(ViewTypes.GALLERY);
   });
+  it('Groupby desc sorted and with rollup view data  list with required columns CALENDAR', async function () {
+    await testGroupDescSorted(ViewTypes.CALENDAR);
+  });
 
   const testGroupWithOffset = async (viewType: ViewTypes) => {
     const view = await createView(context, {
@@ -1006,41 +1113,81 @@ function viewRowTests() {
   it('Groupby desc sorted and with rollup view data  list with required columns GRID', async function () {
     await testGroupWithOffset(ViewTypes.GRID);
   });
+  it('Groupby desc sorted and with rollup view data  list with required columns CALENDAR', async function () {
+    await testGroupWithOffset(ViewTypes.CALENDAR);
+  });
 
   const testCount = async (viewType: ViewTypes) => {
+    let calendar_range = {};
+    let table;
+
+    if (viewType === ViewTypes.CALENDAR) {
+      table = rentalTable;
+      calendar_range = {
+        fk_from_column_id: rentalColumns.find((c) => c.title === 'RentalDate')
+          .id,
+      };
+    } else {
+      table = customerTable;
+    }
+
     const view = await createView(context, {
       title: 'View',
-      table: customerTable,
+      table: table,
       type: viewType,
+      range: calendar_range,
     });
 
     const response = await request(context.app)
       .get(
-        `/api/v1/db/data/noco/${sakilaProject.id}/${customerTable.id}/views/${view.id}/count`,
+        `/api/v1/db/data/noco/${sakilaProject.id}/${table.id}/views/${view.id}/count`,
       )
       .set('xc-auth', context.token)
       .expect(200);
 
-    if (parseInt(response.body.count) !== 599) {
-      throw new Error('Wrong count');
+    if (viewType === ViewTypes.CALENDAR) {
+      if (parseInt(response.body.count) !== 16044) {
+        throw new Error('Wrong count');
+      }
+    } else {
+      if (parseInt(response.body.count) !== 599) {
+        throw new Error('Wrong count');
+      }
     }
   };
   it('Count view data list with required columns', async function () {
     await testCount(ViewTypes.GRID);
     await testCount(ViewTypes.FORM);
     await testCount(ViewTypes.GALLERY);
+    await testCount(ViewTypes.CALENDAR);
   });
 
   const testReadViewRow = async (viewType: ViewTypes) => {
+    let table;
+    let calendar_range = {};
+
+    let Id = 'CustomerId';
+    if (viewType === ViewTypes.CALENDAR) {
+      table = rentalTable;
+      calendar_range = {
+        fk_from_column_id: rentalColumns.find((c) => c.title === 'RentalDate')
+          .id,
+      };
+      Id = 'RentalId';
+    } else {
+      table = customerTable;
+    }
+
     const view = await createView(context, {
       title: 'View',
-      table: customerTable,
+      table: table,
       type: viewType,
+      range: calendar_range,
     });
 
     const listResponse = await request(context.app)
       .get(
-        `/api/v1/db/data/noco/${sakilaProject.id}/${customerTable.id}/views/${view.id}`,
+        `/api/v1/db/data/noco/${sakilaProject.id}/${table.id}/views/${view.id}`,
       )
       .set('xc-auth', context.token)
       .expect(200);
@@ -1049,13 +1196,13 @@ function viewRowTests() {
 
     const readResponse = await request(context.app)
       .get(
-        `/api/v1/db/data/noco/${sakilaProject.id}/${customerTable.id}/views/${view.id}/${row['CustomerId']}`,
+        `/api/v1/db/data/noco/${sakilaProject.id}/${table.id}/views/${view.id}/${row[Id]}`,
       )
       .set('xc-auth', context.token)
       .expect(200);
 
     if (
-      row['CustomerId'] !== readResponse.body['CustomerId'] ||
+      row[Id] !== readResponse.body[Id] ||
       row['FirstName'] !== readResponse.body['FirstName']
     ) {
       throw new Error('Wrong read');
@@ -1065,15 +1212,31 @@ function viewRowTests() {
     await testReadViewRow(ViewTypes.GALLERY);
     await testReadViewRow(ViewTypes.FORM);
     await testReadViewRow(ViewTypes.GRID);
+    await testReadViewRow(ViewTypes.CALENDAR);
   });
 
   const testUpdateViewRow = async (viewType: ViewTypes) => {
     const table = await createTable(context, base);
     const row = await createRow(context, { base, table });
+
+    let calendar_range = {};
+
+    if (viewType === ViewTypes.CALENDAR) {
+      const column = await createColumn(context, table, {
+        title: 'RentalDate',
+        column_name: 'rental_date',
+        uidt: UITypes.Date,
+      });
+      calendar_range = {
+        fk_from_column_id: column.id,
+      };
+    }
+
     const view = await createView(context, {
       title: 'View',
       table: table,
       type: viewType,
+      range: calendar_range,
     });
 
     const updateResponse = await request(context.app)
@@ -1099,6 +1262,9 @@ function viewRowTests() {
   it('Update view row FORM', async function () {
     await testUpdateViewRow(ViewTypes.FORM);
   });
+  it('Update view row CALENDAR', async function () {
+    await testUpdateViewRow(ViewTypes.CALENDAR);
+  });
 
   const testUpdateViewRowWithValidationAndInvalidData = async (
     viewType: ViewTypes,
@@ -1112,10 +1278,25 @@ function viewRowTests() {
         validate: true,
       },
     });
+
+    let calendar_range = {};
+
+    if (viewType === ViewTypes.CALENDAR) {
+      const column = await createColumn(context, table, {
+        title: 'RentalDate',
+        column_name: 'rental_date',
+        uidt: UITypes.Date,
+      });
+      calendar_range = {
+        fk_from_column_id: column.id,
+      };
+    }
+
     const view = await createView(context, {
       title: 'View',
       table: table,
       type: viewType,
+      range: calendar_range,
     });
 
     const row = await createRow(context, { base, table });
@@ -1139,7 +1320,9 @@ function viewRowTests() {
   it('Update view row with validation and invalid data FORM', async function () {
     await testUpdateViewRowWithValidationAndInvalidData(ViewTypes.FORM);
   });
-
+  it('Update view row with validation and invalid data CALENDAR', async function () {
+    await testUpdateViewRowWithValidationAndInvalidData(ViewTypes.CALENDAR);
+  });
   // todo: Test webhooks of before and after update
   // todo: Test with form view
 
@@ -1155,10 +1338,25 @@ function viewRowTests() {
         validate: true,
       },
     });
+
+    let calendar_range = {};
+
+    if (viewType === ViewTypes.CALENDAR) {
+      const column = await createColumn(context, table, {
+        title: 'RentalDate',
+        column_name: 'rental_date',
+        uidt: UITypes.Date,
+      });
+      calendar_range = {
+        fk_from_column_id: column.id,
+      };
+    }
+
     const view = await createView(context, {
       title: 'View',
       table: table,
       type: viewType,
+      range: calendar_range,
     });
     const row = await createRow(context, { base, table });
 
@@ -1190,14 +1388,31 @@ function viewRowTests() {
   it('Update view row with validation and valid data FORM', async function () {
     await testUpdateViewRowWithValidationAndValidData(ViewTypes.FORM);
   });
+  it('Update view row with validation and valid data CALENDAR', async function () {
+    await testUpdateViewRowWithValidationAndValidData(ViewTypes.CALENDAR);
+  });
 
   const testDeleteViewRow = async (viewType: ViewTypes) => {
     const table = await createTable(context, base);
+
+    let calendar_range = {};
+    if (viewType === ViewTypes.CALENDAR) {
+      const range = await createColumn(context, table, {
+        title: 'RentalDate',
+        column_name: 'rental_date',
+        uidt: UITypes.Date,
+      });
+      calendar_range = {
+        fk_from_column_id: range.id,
+      };
+    }
+
     const row = await createRow(context, { base, table });
     const view = await createView(context, {
       title: 'View',
       table: table,
       type: viewType,
+      range: calendar_range,
     });
 
     await request(context.app)
@@ -1221,6 +1436,9 @@ function viewRowTests() {
   });
   it('Delete view row FORM', async function () {
     await testDeleteViewRow(ViewTypes.FORM);
+  });
+  it('Delete view row CALENDAR', async function () {
+    await testDeleteViewRow(ViewTypes.CALENDAR);
   });
 
   const testDeleteViewRowWithForeignKeyConstraint = async (
@@ -1275,21 +1493,40 @@ function viewRowTests() {
   it('Delete view row with ltar foreign key constraint FORM', async function () {
     await testDeleteViewRowWithForeignKeyConstraint(ViewTypes.FORM);
   });
+  it('Delete view row with ltar foreign key constraint Calendar', async function () {
+    await testDeleteViewRowWithForeignKeyConstraint(ViewTypes.CALENDAR);
+  });
 
   const testViewRowExists = async (viewType: ViewTypes) => {
+    let table;
+    let calendar_range = {};
+    let colTitle;
+
+    if (viewType === ViewTypes.CALENDAR) {
+      colTitle = 'RentalId';
+      table = rentalTable;
+      calendar_range = {
+        fk_from_column_id: rentalColumns.find((c) => c.title === 'RentalId').id,
+      };
+    } else {
+      table = customerTable;
+      colTitle = 'CustomerId';
+    }
     const row = await getOneRow(context, {
       base: sakilaProject,
-      table: customerTable,
+      table: table,
     });
+
     const view = await createView(context, {
       title: 'View',
-      table: customerTable,
+      table: table,
       type: viewType,
+      range: calendar_range,
     });
 
     const response = await request(context.app)
       .get(
-        `/api/v1/db/data/noco/${sakilaProject.id}/${customerTable.id}/views/${view.id}/${row['CustomerId']}/exist`,
+        `/api/v1/db/data/noco/${sakilaProject.id}/${table.id}/views/${view.id}/${row[colTitle]}/exist`,
       )
       .set('xc-auth', context.token)
       .expect(200);
@@ -1302,17 +1539,34 @@ function viewRowTests() {
     await testViewRowExists(ViewTypes.GALLERY);
     await testViewRowExists(ViewTypes.GRID);
     await testViewRowExists(ViewTypes.FORM);
+    await testViewRowExists(ViewTypes.CALENDAR);
   });
 
   const testViewRowNotExists = async (viewType: ViewTypes) => {
+    let calendar_range = {};
+    if (viewType === ViewTypes.CALENDAR) {
+      calendar_range = {
+        fk_from_column_id: rentalColumns.find((c) => c.title === 'RentalDate')
+          .id,
+      };
+    }
+    let table;
+
+    if (viewType === ViewTypes.CALENDAR) {
+      table = rentalTable;
+    } else {
+      table = customerTable;
+    }
+
     const view = await createView(context, {
       title: 'View',
-      table: customerTable,
+      table: table,
       type: viewType,
+      range: calendar_range,
     });
     const response = await request(context.app)
       .get(
-        `/api/v1/db/data/noco/${sakilaProject.id}/${customerTable.id}/views/${view.id}/999999/exist`,
+        `/api/v1/db/data/noco/${sakilaProject.id}/${table.id}/views/${view.id}/999999/exist`,
       )
       .set('xc-auth', context.token)
       .expect(200);
@@ -1325,6 +1579,103 @@ function viewRowTests() {
     await testViewRowNotExists(ViewTypes.GALLERY);
     await testViewRowNotExists(ViewTypes.GRID);
     await testViewRowNotExists(ViewTypes.FORM);
+    await testViewRowNotExists(ViewTypes.CALENDAR);
+  });
+
+  const testCalendarDataApi = async () => {
+    const table = rentalTable;
+    const calendar_range = {
+      fk_from_column_id: rentalColumns.find((c) => c.title === 'RentalDate').id,
+    };
+
+    const view = await createView(context, {
+      title: 'View',
+      table: table,
+      type: ViewTypes.CALENDAR,
+      range: calendar_range,
+    });
+
+    const response = await request(context.app)
+      .get(
+        `/api/v1/db/calendar-data/noco/${sakilaProject.id}/${table.id}/views/${view.id}`,
+      )
+      .query({
+        from_date: '2005-05-25',
+        to_date: '2005-05-26',
+      })
+      .set('xc-auth', context.token)
+      .expect(200);
+
+    if (response.body.list.length !== 137) {
+      throw new Error('Wrong calendar data');
+    }
+  };
+
+  it('Calendar data', async function () {
+    await testCalendarDataApi();
+  });
+
+  const testCountDatesByRange = async (viewType: ViewTypes) => {
+    let calendar_range = {};
+    let expectStatus = 400;
+
+    if (viewType === ViewTypes.CALENDAR) {
+      calendar_range = {
+        fk_from_column_id: rentalColumns.find((c) => c.title === 'RentalDate')
+          .id,
+      };
+      expectStatus = 200;
+    }
+
+    const view = await createView(context, {
+      title: 'View',
+      table: rentalTable,
+      type: viewType,
+      range: calendar_range,
+    });
+
+    const response = await request(context.app)
+      .get(
+        `/api/v1/db/calendar-data/noco/${sakilaProject.id}/${rentalTable.id}/views/${view.id}/countByDate/`,
+      )
+      .query({
+        from_date: '2005-05-25',
+        to_date: '2005-05-26',
+      })
+      .set('xc-auth', context.token)
+      .expect(expectStatus);
+
+    if (
+      expectStatus === 200 &&
+      response.body.count !== 137 &&
+      response.body.dates.length !== 137
+    ) {
+      throw new Error('Wrong count');
+    } else if (
+      expectStatus === 400 &&
+      response.body.msg !== 'View is not a calendar view'
+    ) {
+      throw new Error('Wrong error message');
+    }
+  };
+
+  it('Count dates by range Calendar', async () => {
+    await testCountDatesByRange(ViewTypes.CALENDAR);
+  });
+
+  it('Count dates by range GRID', async () => {
+    await testCountDatesByRange(ViewTypes.GRID);
+  });
+
+  it('Count dates by range KANBAN', async () => {
+    await testCountDatesByRange(ViewTypes.KANBAN);
+  });
+  it('Count dates by range FORM', async () => {
+    await testCountDatesByRange(ViewTypes.FORM);
+  });
+
+  it('Count dates by range GALLERY', async () => {
+    await testCountDatesByRange(ViewTypes.GALLERY);
   });
 
   it('Export csv GRID', async function () {
@@ -1372,6 +1723,87 @@ function viewRowTests() {
     }
     if (!response.text) {
       throw new Error('Wrong export');
+    }
+  });
+
+  it('Test view column v3 apis', async function () {
+    const table = new Model(
+      await getTable({
+        base: sakilaProject,
+        name: 'film',
+      }),
+    );
+
+    const view = await getView(context, {
+      table,
+      name: 'Film',
+    });
+
+    const columns = await table.getColumns(sakilaCtx);
+
+    // get rows
+    const rows = await listRow({
+      base: sakilaProject,
+      table: table,
+      view,
+      options: {
+        limit: 1,
+      },
+    });
+
+    // verify fields in response
+
+    // hide few columns using update view column API
+    // const view = await createView(context, {
+    const columnsToHide = ['Rating', 'Description', 'ReleaseYear'];
+
+    // generate key value pair of column id and object with hidden as true
+    const viewColumnsObj: any = columnsToHide.reduce((acc, columnTitle) => {
+      const column = columns.find((c) => c.title === columnTitle);
+      if (column) {
+        acc[column.id] = {
+          show: false,
+        };
+      }
+      return acc;
+    }, {});
+
+    await updateViewColumns(context, {
+      view,
+      viewColumns: viewColumnsObj,
+    });
+
+    // get rows after update
+    const rowsAfterUpdate = await listRow({
+      base: sakilaProject,
+      table: table,
+      view,
+      options: {
+        limit: 1,
+      },
+    });
+
+    // verify column visible in old and hidden in new
+    for (const title of columnsToHide) {
+      expect(rows[0]).to.have.property(title);
+      expect(rowsAfterUpdate[0]).to.not.have.property(title);
+    }
+
+    // get view columns and verify hidden columns
+    const viewColApiRes: any = await getViewColumns(context, {
+      view,
+    });
+
+    for (const colId of Object.keys(viewColApiRes[APIContext.VIEW_COLUMNS])) {
+      const column = columns.find((c) => c.id === colId);
+      if (columnsToHide.includes(column.title)) {
+        expect(viewColApiRes[APIContext.VIEW_COLUMNS][colId]).to.have.property(
+          'show',
+        );
+        expect(!!viewColApiRes[APIContext.VIEW_COLUMNS][colId].show).to.be.eq(
+          false,
+        );
+      }
     }
   });
 }

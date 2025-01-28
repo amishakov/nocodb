@@ -1,35 +1,6 @@
 <script setup lang="ts">
 import { UITypes } from 'nocodb-sdk'
 import type { ColumnType } from 'nocodb-sdk'
-import {
-  ActiveCellInj,
-  ColumnInj,
-  IsFormInj,
-  ReadonlyInj,
-  computed,
-  isBoolean,
-  isCurrency,
-  isDate,
-  isDateTime,
-  isDecimal,
-  isDuration,
-  isFloat,
-  isInt,
-  isMultiSelect,
-  isPercent,
-  isRating,
-  isSingleSelect,
-  isTextArea,
-  isTime,
-  isUser,
-  isYear,
-  provide,
-  ref,
-  storeToRefs,
-  toRef,
-  useBase,
-} from '#imports'
-import type { Filter } from '#imports'
 import SingleSelect from '~/components/cell/SingleSelect.vue'
 import MultiSelect from '~/components/cell/MultiSelect.vue'
 import DatePicker from '~/components/cell/DatePicker.vue'
@@ -46,8 +17,10 @@ import Text from '~/components/cell/Text.vue'
 import User from '~/components/cell/User.vue'
 
 interface Props {
-  column: ColumnType
+  // column could be possibly undefined when the filter is created
+  column?: ColumnType
   filter: Filter
+  disabled?: boolean
 }
 
 interface Emits {
@@ -68,7 +41,7 @@ provide(EditModeInj, readonly(editEnabled))
 
 provide(ReadonlyInj, ref(false))
 
-const checkTypeFunctions = {
+const checkTypeFunctions: Record<string, (column: ColumnType, abstractType?: string) => boolean> = {
   isSingleSelect,
   isMultiSelect,
   isDate,
@@ -80,18 +53,24 @@ const checkTypeFunctions = {
   isPercent,
   isCurrency,
   isDecimal,
+  isReadonlyDateTime,
   isInt,
   isFloat,
   isTextArea,
   isLinks: (col: ColumnType) => col.uidt === UITypes.Links,
   isUser,
+  isReadonlyUser,
 }
 
 type FilterType = keyof typeof checkTypeFunctions
 
 const { sqlUis } = storeToRefs(useBase())
 
-const sqlUi = ref(column.value?.source_id ? sqlUis.value[column.value?.source_id] : Object.values(sqlUis.value)[0])
+const sqlUi = ref(
+  column.value?.source_id && sqlUis.value[column.value?.source_id]
+    ? sqlUis.value[column.value?.source_id]
+    : Object.values(sqlUis.value)[0],
+)
 
 const abstractType = computed(() => column.value && sqlUi.value.getAbstractType(column.value))
 
@@ -102,7 +81,7 @@ const checkType = (filterType: FilterType) => {
     return false
   }
 
-  return checkTypeFunction(column.value, abstractType)
+  return checkTypeFunction(column.value, abstractType.value)
 }
 
 const filterInput = computed({
@@ -142,6 +121,7 @@ const componentMap: Partial<Record<FilterType, any>> = computed(() => {
     isDate: renderDateFilterInput(props.filter.comparison_sub_op!),
     isYear: YearPicker,
     isDateTime: renderDateFilterInput(props.filter.comparison_sub_op!),
+    isReadonlyDateTime: renderDateFilterInput(props.filter.comparison_sub_op!),
     isTime: TimePicker,
     isRating: Rating,
     isDuration: Duration,
@@ -152,6 +132,7 @@ const componentMap: Partial<Record<FilterType, any>> = computed(() => {
     isFloat: Float,
     isLinks: Integer,
     isUser: User,
+    isReadonlyUser: User,
   }
 })
 
@@ -178,6 +159,22 @@ const componentProps = computed(() => {
     case 'isUser': {
       return { forceMulti: true }
     }
+    case 'isReadonlyUser': {
+      if (['anyof', 'nanyof'].includes(props.filter.comparison_op!)) {
+        return { forceMulti: true }
+      }
+      return {}
+    }
+    case 'isCurrency': {
+      return { hidePrefix: true }
+    }
+    case 'isRating': {
+      return {
+        style: {
+          minWidth: `${(column.value?.meta?.max || 5) * 19}px`,
+        },
+      }
+    }
     default: {
       return {}
     }
@@ -201,28 +198,35 @@ const isInputBoxOnFocus = ref(false)
 // provide the following to override the default behavior and enable input fields like in form
 provide(ActiveCellInj, ref(true))
 provide(IsFormInj, ref(true))
+
+const isSingleOrMultiSelect = computed(() => {
+  return filterType.value === 'isSingleSelect' || filterType.value === 'isMultiSelect'
+})
 </script>
 
 <template>
   <a-select
     v-if="column && isBoolean(column, abstractType)"
     v-model:value="filterInput"
-    :disabled="filter.readOnly"
+    :disabled="filter.readOnly || props.disabled"
     :options="booleanOptions"
   />
   <div
     v-else
-    class="bg-white border-1 flex flex-grow min-h-4 h-full items-center nc-filter-input-wrapper !rounded-lg"
-    :class="{ 'px-2': hasExtraPadding, 'border-brand-500': isInputBoxOnFocus }"
+    class="bg-white border-1 flex flex-grow min-h-4 h-full px-1 items-center nc-filter-input-wrapper !rounded-lg"
+    :class="{ 'px-2': hasExtraPadding, 'border-brand-500': isInputBoxOnFocus, '!max-w-100': isSingleOrMultiSelect }"
     @mouseup.stop
   >
     <component
       :is="filterType ? componentMap[filterType] : Text"
       v-model="filterInput"
-      :disabled="filter.readOnly"
+      :disabled="filter.readOnly || props.disabled"
       placeholder="Enter a value"
       :column="column"
-      class="flex"
+      class="flex !rounded-lg"
+      :class="{
+        'text-nc-content-gray-muted pointer-events-none': props.disabled,
+      }"
       v-bind="componentProps"
       location="filter"
       @focus="isInputBoxOnFocus = true"

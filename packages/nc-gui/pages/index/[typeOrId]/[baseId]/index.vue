@@ -1,25 +1,4 @@
 <script setup lang="ts">
-import {
-  definePageMeta,
-  extractSdkResponseErrorMsg,
-  isDrawerOrModalExist,
-  isMac,
-  message,
-  onBeforeMount,
-  onBeforeUnmount,
-  onKeyStroke,
-  onMounted,
-  ref,
-  resolveComponent,
-  useBase,
-  useDialog,
-  useI18n,
-  useRoute,
-  useRouter,
-  useSidebar,
-  useTheme,
-} from '#imports'
-
 definePageMeta({
   hideHeader: true,
   hasSidebar: true,
@@ -133,7 +112,7 @@ useEventListener(document, 'keydown', async (e: KeyboardEvent) => {
 
 .nc-left-sidebar {
   .nc-sidebar-left-toggle-icon {
-    @apply opacity-0 transition-opactity duration-200 transition-color text-gray-500/80 hover:text-gray-500/100;
+    @apply opacity-0 transition-opacity duration-200 transition-colors text-gray-500/80 hover:text-gray-500/100;
 
     .nc-left-sidebar {
       @apply !border-r-0;

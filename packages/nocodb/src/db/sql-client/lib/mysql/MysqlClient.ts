@@ -15,13 +15,12 @@ import KnexClient from '../KnexClient';
 import queries from './mysql.queries';
 import fakerFunctionList from './fakerFunctionList';
 import * as findDataType from './findDataTypeMapping';
+import deepClone from '~/helpers/deepClone';
 
 const log = new Debug('MysqlClient');
 const evt = new Emit();
 
 class MysqlClient extends KnexClient {
-  protected queries: any;
-  protected _version: any;
   protected types: any;
 
   constructor(connectionConfig) {
@@ -302,9 +301,9 @@ class MysqlClient extends KnexClient {
 
     try {
       // create a new knex client without database param
-      const connectionParamsWithoutDb = JSON.parse(
-        JSON.stringify(this.connectionConfig),
-      );
+      const connectionParamsWithoutDb = deepClone(this.connectionConfig);
+      connectionParamsWithoutDb.connection.password =
+        this.connectionConfig.connection.password;
 
       delete connectionParamsWithoutDb.connection.database;
 
@@ -316,8 +315,6 @@ class MysqlClient extends KnexClient {
 
       log.debug('Create database if not exists', data);
 
-      // create new knex client
-      this.sqlClient = knex(this.connectionConfig);
       await tempSqlClient.destroy();
     } catch (e) {
       log.ppe(e, func);
@@ -2168,7 +2165,7 @@ class MysqlClient extends KnexClient {
 
       await this.sqlClient.raw(upQuery);
 
-      console.log(upQuery);
+      // console.log(upQuery);
 
       result.data.object = {
         upStatement: [{ sql: this.querySeparator() + upQuery }],
@@ -2498,6 +2495,7 @@ class MysqlClient extends KnexClient {
     query += n.un ? ' UNSIGNED' : '';
     query += n.rqd ? ' NOT NULL' : ' NULL';
     query += n.ai ? ' auto_increment' : '';
+    query += n.unique ? ` UNIQUE` : '';
     const defaultValue = this.sanitiseDefaultValue(n.cdf);
     query += defaultValue
       ? `

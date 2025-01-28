@@ -8,9 +8,11 @@ const props = defineProps<{
 
 const source = toRef(props, 'source')
 
+const base = toRef(props, 'base')
+
 const { isUIAllowed } = useRoles()
 
-const baseRole = inject(ProjectRoleInj)
+const baseRole = computed(() => base.value.project_role || base.value.workspace_role)
 
 const { $e } = useNuxtApp()
 
@@ -36,7 +38,7 @@ function openAirtableImportDialog(baseId?: string, sourceId?: string) {
 }
 
 function openQuickImportDialog(type: string) {
-  if (!source.value?.id) return
+  if (!source.value?.id || !source.value.base_id) return
 
   $e(`a:actions:import-${type}`)
 
@@ -45,6 +47,7 @@ function openQuickImportDialog(type: string) {
   const { close } = useDialog(resolveComponent('DlgQuickImport'), {
     'modelValue': isOpen,
     'importType': type,
+    'baseId': source.value.base_id,
     'sourceId': source.value.id,
     'onUpdate:modelValue': closeDialog,
   })
@@ -59,50 +62,52 @@ function openQuickImportDialog(type: string) {
 
 <template>
   <!-- Quick Import From -->
-  <NcSubMenu class="py-0" data-testid="nc-sidebar-base-import">
+  <NcSubMenu class="py-0" data-testid="nc-sidebar-base-import" variant="small">
     <template #title>
-      <GeneralIcon icon="download" />
+      <GeneralIcon icon="download" class="opacity-80" />
       {{ $t('labels.importData') }}
     </template>
 
-    <template #expandIcon></template>
-
     <NcMenuItem
-      v-if="isUIAllowed('airtableImport', { roles: baseRole })"
+      v-if="isUIAllowed('airtableImport', { roles: baseRole, source })"
       key="quick-import-airtable"
       @click="openAirtableImportDialog(source.base_id, source.id)"
     >
       <div v-e="['c:import:airtable']" class="flex gap-2 items-center">
-        <GeneralIcon icon="airtable" class="max-w-3.75 group-hover:text-black" />
+        <GeneralIcon icon="airtable" class="max-w-3.75" />
         <div class="ml-0.5">{{ $t('labels.airtable') }}</div>
       </div>
     </NcMenuItem>
 
-    <NcMenuItem v-if="isUIAllowed('csvImport', { roles: baseRole })" key="quick-import-csv" @click="openQuickImportDialog('csv')">
+    <NcMenuItem
+      v-if="isUIAllowed('csvImport', { roles: baseRole, source })"
+      key="quick-import-csv"
+      @click="openQuickImportDialog('csv')"
+    >
       <div v-e="['c:import:csv']" class="flex gap-2 items-center">
-        <GeneralIcon icon="csv" class="w-4 group-hover:text-black" />
+        <GeneralIcon icon="csv" class="w-4" />
         {{ $t('labels.csvFile') }}
       </div>
     </NcMenuItem>
 
     <NcMenuItem
-      v-if="isUIAllowed('jsonImport', { roles: baseRole })"
+      v-if="isUIAllowed('jsonImport', { roles: baseRole, source })"
       key="quick-import-json"
       @click="openQuickImportDialog('json')"
     >
       <div v-e="['c:import:json']" class="flex gap-2 items-center">
-        <GeneralIcon icon="code" class="w-4 group-hover:text-black" />
+        <GeneralIcon icon="ncFileTypeJson" class="w-4" />
         {{ $t('labels.jsonFile') }}
       </div>
     </NcMenuItem>
 
     <NcMenuItem
-      v-if="isUIAllowed('excelImport', { roles: baseRole })"
+      v-if="isUIAllowed('excelImport', { roles: baseRole, source })"
       key="quick-import-excel"
       @click="openQuickImportDialog('excel')"
     >
       <div v-e="['c:import:excel']" class="flex gap-2 items-center">
-        <GeneralIcon icon="excel" class="max-w-4 group-hover:text-black" />
+        <GeneralIcon icon="excel" class="max-w-4" />
         {{ $t('labels.microsoftExcel') }}
       </div>
     </NcMenuItem>

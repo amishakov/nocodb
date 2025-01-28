@@ -21,23 +21,24 @@ import { FindRowByScanOverlay } from './FindRowByScanOverlay';
 import { SidebarPage } from './Sidebar';
 import { DocsPageGroup } from './Docs';
 import { ShareProjectButtonPage } from './ShareProjectButton';
-import { ProjectTypes } from 'nocodb-sdk';
 import { WorkspacePage } from '../WorkspacePage';
 import { DetailsPage } from './Details';
 import { WorkspaceSettingsObject } from './WorkspaceSettings';
 import { CmdJ } from './Command/CmdJPage';
 import { CmdK } from './Command/CmdKPage';
 import { CmdL } from './Command/CmdLPage';
+import { CalendarPage } from './Calendar';
+import { Extensions } from './Extensions';
 
 export class DashboardPage extends BasePage {
   readonly base: any;
   readonly tablesSideBar: Locator;
-  readonly baseMenuLink: Locator;
   readonly workspaceMenuLink: Locator;
   readonly tabBar: Locator;
   readonly treeView: TreeViewPage;
   readonly grid: GridPage;
   readonly gallery: GalleryPage;
+  readonly calendar: CalendarPage;
   readonly form: FormPage;
   readonly kanban: KanbanPage;
   readonly map: MapPage;
@@ -61,20 +62,18 @@ export class DashboardPage extends BasePage {
   readonly cmdJ: CmdJ;
   readonly cmdK: CmdK;
   readonly cmdL: CmdL;
+  readonly extensions: Extensions;
 
   constructor(rootPage: Page, base: any) {
     super(rootPage);
     this.base = base;
     this.tablesSideBar = rootPage.locator('.nc-treeview-container');
     this.workspaceMenuLink = rootPage.getByTestId('nc-base-menu');
-    this.baseMenuLink = rootPage
-      .locator(`.base-title-node:has-text("${base.title}")`)
-      .locator('[data-testid="nc-sidebar-context-menu"]')
-      .first();
     this.tabBar = rootPage.locator('.nc-tab-bar');
     this.treeView = new TreeViewPage(this, base);
     this.grid = new GridPage(this);
     this.gallery = new GalleryPage(this);
+    this.calendar = new CalendarPage(this);
     this.form = new FormPage(this);
     this.kanban = new KanbanPage(this);
     this.map = new MapPage(this);
@@ -97,6 +96,7 @@ export class DashboardPage extends BasePage {
     this.cmdJ = new CmdJ(this);
     this.cmdK = new CmdK(this);
     this.cmdL = new CmdL(this);
+    this.extensions = new Extensions(this);
   }
 
   get() {
@@ -111,35 +111,43 @@ export class DashboardPage extends BasePage {
     return this.rootPage.locator(`div.nc-base-menu-item:has-text("${title}")`);
   }
 
+  async clickOnBaseMenuLink() {
+    const baseMenuLocator = this.rootPage.locator(`.base-title-node:has-text("${this.base.title}")`).first();
+
+    await baseMenuLocator.waitFor({ state: 'visible' });
+    await baseMenuLocator.scrollIntoViewIfNeeded();
+    await baseMenuLocator.hover();
+
+    await baseMenuLocator.locator('[data-testid="nc-sidebar-context-menu"]').first().click();
+  }
+
   async verifyTeamAndSettingsLinkIsVisible() {
-    await this.baseMenuLink.click();
+    await this.clickOnBaseMenuLink();
     const teamAndSettingsLink = this.getProjectMenuLink({ title: ' Team & Settings' });
     await expect(teamAndSettingsLink).toBeVisible();
-    await this.baseMenuLink.click();
+    await this.clickOnBaseMenuLink();
   }
 
   async verifyTeamAndSettingsLinkIsNotVisible() {
-    await this.baseMenuLink.click();
+    await this.clickOnBaseMenuLink();
     const teamAndSettingsLink = this.getProjectMenuLink({ title: ' Team & Settings' });
     await expect(teamAndSettingsLink).not.toBeVisible();
-    await this.baseMenuLink.click();
+    await this.clickOnBaseMenuLink();
   }
 
   async gotoSettings() {
-    await this.baseMenuLink.click();
+    await this.clickOnBaseMenuLink();
     await this.rootPage.locator('.ant-dropdown').locator(`.nc-menu-item:has-text("Settings")`).click();
   }
 
   async gotoProjectSubMenu({ title }: { title: string }) {
-    await this.baseMenuLink.click();
+    await this.clickOnBaseMenuLink();
     await this.rootPage.locator(`div.nc-base-menu-item:has-text("${title}")`).click();
   }
 
   async verifyInTabBar({ title }: { title: string }) {
     await this.tabBar.textContent().then(text => expect(text).toContain(title));
   }
-
-  async closeTab({ title }: { title: string }) {}
 
   async clickHome() {
     await this.leftSidebar.clickHome();
@@ -148,7 +156,7 @@ export class DashboardPage extends BasePage {
     await workspacePage.waitFor({ state: 'visible' });
   }
 
-  async verifyOpenedTab({ title, mode = 'standard', emoji }: { title: string; mode?: string; emoji?: string }) {
+  async verifyOpenedTab({ title, emoji }: { title: string; emoji?: string }) {
     await this.tabBar.locator(`.ant-tabs-tab-active:has-text("${title}")`).isVisible();
 
     if (emoji) {
@@ -162,38 +170,13 @@ export class DashboardPage extends BasePage {
     await expect(this.tabBar.locator(`.ant-tabs-tab:has-text("${title}")`)).not.toBeVisible();
   }
 
-  private async _waitForDocsTabRender({ title, mode }: { title: string; mode: string }) {
-    await this.tabBar.locator(`.ant-tabs-tab-active:has-text("${title}")`).waitFor();
-
-    // wait active tab animation to finish
-    await expect
-      .poll(async () => {
-        return await this.tabBar.getByTestId(`nc-root-tabs-${title}`).evaluate(el => {
-          return window.getComputedStyle(el).getPropertyValue('color');
-        });
-      })
-      .toBe('rgb(67, 81, 232)');
-
-    await this.rootPage.waitForTimeout(500);
-  }
-
   // When a tab is opened, it is not always immediately visible.
-  // Hence will wait till contents are visible
-  async waitForTabRender({
-    title,
-    mode = 'standard',
-    type = ProjectTypes.DATABASE,
-  }: {
-    title: string;
-    mode?: string;
-    type?: ProjectTypes;
-  }) {}
 
   async toggleMobileMode() {
-    await this.baseMenuLink.click();
+    await this.clickOnBaseMenuLink();
     const projMenu = this.rootPage.locator('.nc-dropdown-base-menu');
     await projMenu.locator('[data-menu-id="mobile-mode"]:visible').click();
-    await this.baseMenuLink.click();
+    await this.clickOnBaseMenuLink();
   }
 
   async signOut() {
@@ -251,6 +234,16 @@ export class DashboardPage extends BasePage {
     await this.rootPage.locator('[data-testid="nc-loading"]').waitFor({ state: 'hidden' });
   }
 
+  async closeAllTabs() {
+    const tab = this.tabBar.locator(`.ant-tabs-tab`);
+    const tabCount = await tab.count();
+
+    for (let i = 0; i < tabCount; i++) {
+      await tab.nth(i).locator('button.ant-tabs-tab-remove').click();
+      await this.rootPage.waitForTimeout(200);
+    }
+  }
+
   /*  async closeAllTabs() {
     await this.tabBar.locator(`.ant-tabs-tab`).waitFor({ state: 'visible' });
     const tab = await this.tabBar.locator(`.ant-tabs-tab`);
@@ -261,16 +254,6 @@ export class DashboardPage extends BasePage {
       await tab.nth(i).waitFor({ state: 'detached' });
     }
   }*/
-
-  async closeAllTabs() {
-    const tab = this.tabBar.locator(`.ant-tabs-tab`);
-    const tabCount = await tab.count();
-
-    for (let i = 0; i < tabCount; i++) {
-      await tab.nth(i).locator('button.ant-tabs-tab-remove').click();
-      await this.rootPage.waitForTimeout(200);
-    }
-  }
 
   async validateWorkspaceMenu(param: { role: string; mode?: string }) {
     await this.grid.workspaceMenu.toggle();
@@ -309,4 +292,19 @@ export class DashboardPage extends BasePage {
 
     await this.grid.workspaceMenu.toggle();
   }
+
+  // private async _waitForDocsTabRender({ title, mode }: { title: string; mode: string }) {
+  //   await this.tabBar.locator(`.ant-tabs-tab-active:has-text("${title}")`).waitFor();
+
+  //   // wait active tab animation to finish
+  //   await expect
+  //     .poll(async () => {
+  //       return await this.tabBar.getByTestId(`nc-root-tabs-${title}`).evaluate(el => {
+  //         return window.getComputedStyle(el).getPropertyValue('color');
+  //       });
+  //     })
+  //     .toBe('rgb(67, 81, 232)');
+
+  //   await this.rootPage.waitForTimeout(500);
+  // }
 }

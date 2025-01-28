@@ -1,7 +1,6 @@
 <script lang="ts" setup>
 import JsBarcode from 'jsbarcode'
-import { IsGalleryInj, onMounted } from '#imports'
-import { downloadSvg as _downloadSvg } from '~/utils/svgToPng'
+import { downloadSvg as _downloadSvg, copySVGToClipboard } from '~/utils/svgToPng'
 
 const props = defineProps({
   barcodeValue: { type: String, required: true },
@@ -9,8 +8,9 @@ const props = defineProps({
   customStyle: { type: Object, required: false },
   showDownload: { type: Boolean, required: false, default: false },
 })
-
 const emit = defineEmits(['onClickBarcode'])
+
+const { t } = useI18n()
 
 const isGallery = inject(IsGalleryInj, ref(false))
 
@@ -21,6 +21,8 @@ const generate = () => {
   try {
     JsBarcode(barcodeSvgRef.value, String(props.barcodeValue), {
       format: props.barcodeFormat,
+      displayValue: false,
+      margin: 0,
     })
     if (props.customStyle) {
       if (barcodeSvgRef.value) {
@@ -41,9 +43,15 @@ const downloadSvg = () => {
 
   _downloadSvg(barcodeSvgRef.value, `${props.barcodeValue}.png`)
 }
+const { isCopied, performCopy } = useIsCopied()
+
+const copyAsPng = async () => {
+  if (!barcodeSvgRef.value) return
+  const success = await copySVGToClipboard(barcodeSvgRef.value)
+  if (!success) throw new Error(t('msg.error.notSupported'))
+}
 
 const onBarcodeClick = (ev: MouseEvent) => {
-  if (isGallery.value) return
   ev.stopPropagation()
   emit('onClickBarcode')
 }
@@ -60,18 +68,40 @@ onMounted(generate)
       :class="{
         'w-full': !isGallery,
         'w-auto': isGallery,
+        'mt-8 mb-4': showDownload,
       }"
       data-testid="barcode"
       @click="onBarcodeClick"
     ></svg>
     <slot v-if="errorForCurrentInput" name="barcodeRenderError" />
-    <NcTooltip class="!absolute bottom-0 right-0">
-      <template #title>
-        {{ $t('labels.clickToDownload') }}
-      </template>
-      <NcButton v-if="props.showDownload" size="small" type="secondary" @click="downloadSvg">
-        <GeneralIcon icon="download" class="w-4 h-4" />
-      </NcButton>
-    </NcTooltip>
+    <div v-if="props.showDownload" class="flex justify-end gap-2 py-2 px-3">
+      <NcTooltip>
+        <template #title>
+          {{ $t('labels.clickToCopy') }}
+        </template>
+        <NcButton size="small" type="secondary" @click="performCopy(copyAsPng)">
+          <template #icon>
+            <div class="flex children:flex-none relative h-4 w-4">
+              <Transition name="icon-fade" :duration="200">
+                <GeneralIcon v-if="isCopied" icon="check" class="h-4 w-4 opacity-80" />
+                <GeneralIcon v-else icon="copy" class="h-4 w-4 opacity-80" />
+              </Transition>
+            </div>
+          </template>
+          {{ isCopied ? $t('general.copied') : $t('general.copy') }}
+        </NcButton>
+      </NcTooltip>
+      <NcTooltip>
+        <template #title>
+          {{ $t('labels.clickToDownload') }}
+        </template>
+        <NcButton size="small" type="secondary" @click="downloadSvg">
+          <template #icon>
+            <GeneralIcon icon="download" class="w-4 h-4" />
+          </template>
+          {{ $t('general.download') }}
+        </NcButton>
+      </NcTooltip>
+    </div>
   </div>
 </template>

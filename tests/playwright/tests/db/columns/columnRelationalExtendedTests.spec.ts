@@ -16,9 +16,6 @@ test.describe('Relational Columns', () => {
   });
 
   test('Relational columns: HM, BT, MM', async () => {
-    // close 'Team & Auth' tab
-    await dashboard.closeTab({ title: 'Team & Auth' });
-
     ///////////// Has many
     //
 
@@ -63,8 +60,8 @@ test.describe('Relational Columns', () => {
 
     ///////////// Belongs to
     //
-
     await dashboard.treeView.openTable({ title: 'City' });
+    await dashboard.grid.toolbar.fields.toggle({ title: 'Country', isLocallySaved: false, checked: true });
     const countryList = [['Spain'], ['Saudi Arabia']];
     for (let i = 0; i < countryList.length; i++) {
       await dashboard.grid.cell.verifyVirtualCell({
@@ -79,6 +76,7 @@ test.describe('Relational Columns', () => {
     ///////////// Many to many
     //
     await dashboard.treeView.openTable({ title: 'Actor' });
+    await dashboard.grid.toolbar.fields.toggle({ title: 'Films', isLocallySaved: false, checked: true });
     const filmList = [
       [
         'ACADEMY DINOSAUR',

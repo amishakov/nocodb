@@ -29,6 +29,8 @@ import type Base from '~/models/Base';
 const isColumnsCorrectInResponse = (row, columns: ColumnType[]) => {
   const responseColumnsListStr = Object.keys(row).sort().join(',');
   const customerColumnsListStr = columns
+    // ForeignKey now only shown when getHidden is selected
+    .filter(c => c.uidt !== UITypes.ForeignKey)
     .map((c) => c.title)
     .sort()
     .join(',');
@@ -42,6 +44,10 @@ function tableStaticTest() {
   let sakilaProject: Base;
   let customerTable: Model;
   let customerColumns;
+  let sakilaCtx: {
+    workspace_id: string;
+    base_id: string;
+  };
 
   before(async function () {
     console.time('#### tableTest');
@@ -50,11 +56,16 @@ function tableStaticTest() {
     sakilaProject = await createSakilaProject(context);
     base = await createProject(context);
 
+    sakilaCtx = {
+      workspace_id: sakilaProject.fk_workspace_id,
+      base_id: sakilaProject.id,
+    };
+
     customerTable = await getTable({
       base: sakilaProject,
       name: 'customer',
     });
-    customerColumns = await customerTable.getColumns();
+    customerColumns = await customerTable.getColumns(sakilaCtx);
     console.timeEnd('#### tableTest');
   });
 
@@ -71,6 +82,7 @@ function tableStaticTest() {
       throw new Error('Wrong number of rows');
     }
 
+    console.log('response.body.list[0]', response.body.list[0]);
     if (!isColumnsCorrectInResponse(response.body.list[0], customerColumns)) {
       throw new Error('Wrong columns');
     }
@@ -92,6 +104,7 @@ function tableStaticTest() {
       throw new Error('Wrong number of rows');
     }
 
+    console.log('response.body.list[0]', response.body.list[0]);
     if (!isColumnsCorrectInResponse(response.body.list[0], requiredColumns)) {
       throw new Error('Wrong columns');
     }
@@ -211,7 +224,7 @@ function tableStaticTest() {
       })
       .expect(404);
 
-    if (response.body.msg !== 'Table not found')
+    if (response.body.message !== "Table 'wrong-table-id' not found")
       throw new Error('Wrong error message');
   });
   it('Find one sorted table data list with required columns', async function () {
@@ -373,7 +386,7 @@ function tableStaticTest() {
   // todo: Add export test for views
   it('Nested row list hm', async () => {
     const rowId = 1;
-    const rentalListColumn = (await customerTable.getColumns()).find(
+    const rentalListColumn = (await customerTable.getColumns(sakilaCtx)).find(
       (column) => column.title === 'Rentals',
     )!;
     const response = await request(context.app)
@@ -391,7 +404,7 @@ function tableStaticTest() {
   });
   it('Nested row list hm with limit and offset', async () => {
     const rowId = 1;
-    const rentalListColumn = (await customerTable.getColumns()).find(
+    const rentalListColumn = (await customerTable.getColumns(sakilaCtx)).find(
       (column) => column.title === 'Rentals',
     )!;
     const response = await request(context.app)
@@ -416,7 +429,7 @@ function tableStaticTest() {
   });
   it('Row list hm with invalid table id', async () => {
     const rowId = 1;
-    const rentalListColumn = (await customerTable.getColumns()).find(
+    const rentalListColumn = (await customerTable.getColumns(sakilaCtx)).find(
       (column) => column.title === 'Rentals',
     )!;
     const response = await request(context.app)
@@ -426,7 +439,7 @@ function tableStaticTest() {
       .set('xc-auth', context.token)
       .expect(404);
 
-    if (response.body['msg'] !== 'Table not found') {
+    if (response.body.message !== "Table 'wrong-id' not found") {
       throw new Error('Wrong error message');
     }
   });
@@ -437,7 +450,7 @@ function tableStaticTest() {
       name: 'actor',
     });
     await getTable({ base: sakilaProject, name: 'film' });
-    const filmListColumn = (await actorTable.getColumns()).find(
+    const filmListColumn = (await actorTable.getColumns(sakilaCtx)).find(
       (column) => column.title === 'Films',
     )!;
     const response = await request(context.app)
@@ -460,7 +473,7 @@ function tableStaticTest() {
       name: 'actor',
     });
     await getTable({ base: sakilaProject, name: 'film' });
-    const filmListColumn = (await actorTable.getColumns()).find(
+    const filmListColumn = (await actorTable.getColumns(sakilaCtx)).find(
       (column) => column.title === 'Films',
     )!;
     const response = await request(context.app)
@@ -490,7 +503,7 @@ function tableStaticTest() {
       base: sakilaProject,
       name: 'actor',
     });
-    const filmListColumn = (await actorTable.getColumns()).find(
+    const filmListColumn = (await actorTable.getColumns(sakilaCtx)).find(
       (column) => column.title === 'Films',
     )!;
     const response = await request(context.app)
@@ -500,14 +513,14 @@ function tableStaticTest() {
       .set('xc-auth', context.token)
       .expect(404);
 
-    if (response.body['msg'] !== 'Table not found') {
+    if (response.body.message !== "Table 'invalid-table-id' not found") {
       console.log(response.body);
       throw new Error('Wrong error message');
     }
   });
   it('Create hm relation with invalid table id', async () => {
     const rowId = 1;
-    const rentalListColumn = (await customerTable.getColumns()).find(
+    const rentalListColumn = (await customerTable.getColumns(sakilaCtx)).find(
       (column) => column.title === 'Rentals',
     )!;
     const refId = 1;
@@ -518,13 +531,13 @@ function tableStaticTest() {
       .set('xc-auth', context.token)
       .expect(404);
 
-    if (response.body['msg'] !== 'Table not found') {
+    if (response.body.message !== "Table 'invalid-table-id' not found") {
       throw new Error('Wrong error message');
     }
   });
   it('Create hm relation with non ltar column', async () => {
     const rowId = 1;
-    const firstNameColumn = (await customerTable.getColumns()).find(
+    const firstNameColumn = (await customerTable.getColumns(sakilaCtx)).find(
       (column) => column.title === 'FirstName',
     )!;
     const refId = 1;
@@ -535,7 +548,7 @@ function tableStaticTest() {
       .set('xc-auth', context.token)
       .expect(404);
 
-    if (response.body['msg'] !== 'Column not found') {
+    if (response.body.message !== `Field '${firstNameColumn.id}' not found`) {
       console.log(response.body);
       throw new Error('Wrong error message');
     }
@@ -551,16 +564,14 @@ function tableStaticTest() {
       .set('xc-auth', context.token)
       .expect(404);
 
-    if (
-      response.body.msg !== "Column with id/name 'invalid-column' is not found"
-    ) {
+    if (response.body.message !== "Field 'invalid-column' not found") {
       console.log(response.body);
-      throw new Error('Should error out');
+      throw new Error('Wrong error message');
     }
   });
   it('List hm with non ltar column', async () => {
     const rowId = 1;
-    const firstNameColumn = (await customerTable.getColumns()).find(
+    const firstNameColumn = (await customerTable.getColumns(sakilaCtx)).find(
       (column) => column.title === 'FirstName',
     )!;
 
@@ -573,7 +584,7 @@ function tableStaticTest() {
   });
   it('List mm with non ltar column', async () => {
     const rowId = 1;
-    const firstNameColumn = (await customerTable.getColumns()).find(
+    const firstNameColumn = (await customerTable.getColumns(sakilaCtx)).find(
       (column) => column.title === 'FirstName',
     )!;
 
@@ -586,7 +597,7 @@ function tableStaticTest() {
   });
   it('Exclude list hm', async () => {
     const rowId = 1;
-    const rentalListColumn = (await customerTable.getColumns()).find(
+    const rentalListColumn = (await customerTable.getColumns(sakilaCtx)).find(
       (column) => column.title === 'Rentals',
     )!;
 
@@ -604,7 +615,7 @@ function tableStaticTest() {
   });
   it('Exclude list hm with limit and offset', async () => {
     const rowId = 1;
-    const rentalListColumn = (await customerTable.getColumns()).find(
+    const rentalListColumn = (await customerTable.getColumns(sakilaCtx)).find(
       (column) => column.title === 'Rentals',
     )!;
 
@@ -635,7 +646,7 @@ function tableStaticTest() {
       base: sakilaProject,
       name: 'actor',
     });
-    const filmListColumn = (await actorTable.getColumns()).find(
+    const filmListColumn = (await actorTable.getColumns(sakilaCtx)).find(
       (column) => column.title === 'Films',
     )!;
 
@@ -657,7 +668,7 @@ function tableStaticTest() {
       base: sakilaProject,
       name: 'actor',
     });
-    const filmListColumn = (await actorTable.getColumns()).find(
+    const filmListColumn = (await actorTable.getColumns(sakilaCtx)).find(
       (column) => column.title === 'Films',
     )!;
 
@@ -688,7 +699,7 @@ function tableStaticTest() {
       base: sakilaProject,
       name: 'address',
     });
-    const cityColumn = (await addressTable.getColumns()).find(
+    const cityColumn = (await addressTable.getColumns(sakilaCtx)).find(
       (column) => column.title === 'City',
     )!;
 
@@ -708,7 +719,7 @@ function tableStaticTest() {
       base: sakilaProject,
       name: 'address',
     });
-    const cityColumn = (await addressTable.getColumns()).find(
+    const cityColumn = (await addressTable.getColumns(sakilaCtx)).find(
       (column) => column.title === 'City',
     )!;
 
@@ -729,7 +740,7 @@ function tableStaticTest() {
   it('Get grouped data list', async function () {
     const filmTable = await getTable({ base: sakilaProject, name: 'film' });
 
-    const filmColumns = await filmTable.getColumns();
+    const filmColumns = await filmTable.getColumns(sakilaCtx);
 
     const ratingColumn = filmColumns.find((c) => c.column_name === 'rating');
 
@@ -765,6 +776,10 @@ function tableTest() {
   let sakilaProject: Base;
   let customerTable: Model;
   let customerColumns;
+  let ctx: {
+    workspace_id: string;
+    base_id: string;
+  };
 
   beforeEach(async function () {
     console.time('#### tableTest');
@@ -773,11 +788,16 @@ function tableTest() {
     sakilaProject = await createSakilaProject(context);
     base = await createProject(context);
 
+    ctx = {
+      workspace_id: sakilaProject.fk_workspace_id,
+      base_id: sakilaProject.id,
+    };
+
     customerTable = await getTable({
       base: sakilaProject,
       name: 'customer',
     });
-    customerColumns = await customerTable.getColumns();
+    customerColumns = await customerTable.getColumns(ctx);
     console.timeEnd('#### tableTest');
   });
 
@@ -1017,7 +1037,7 @@ function tableTest() {
       relatedTableColumnTitle: 'FirstName',
     });
 
-    const returnDateColumn = (await rentalTable.getColumns()).find(
+    const returnDateColumn = (await rentalTable.getColumns(ctx)).find(
       (c) => c.title === 'ReturnDate',
     );
 
@@ -1124,15 +1144,15 @@ function tableTest() {
       relatedTableColumnTitle: 'RentalDate',
     });
 
-    const paymentListColumn = (await customerTable.getColumns()).find(
+    const paymentListColumn = (await customerTable.getColumns(ctx)).find(
       (c) => c.title === 'Payments',
     );
 
-    const activeColumn = (await customerTable.getColumns()).find(
+    const activeColumn = (await customerTable.getColumns(ctx)).find(
       (c) => c.title === 'Active',
     );
 
-    const addressColumn = (await customerTable.getColumns()).find(
+    const addressColumn = (await customerTable.getColumns(ctx)).find(
       (c) => c.title === 'Address',
     );
 
@@ -1280,7 +1300,7 @@ function tableTest() {
       relatedTableColumnTitle: 'RentalDate',
     });
 
-    const activeColumn = (await customerTable.getColumns()).find(
+    const activeColumn = (await customerTable.getColumns(ctx)).find(
       (c) => c.title === 'Active',
     );
 
@@ -1519,7 +1539,7 @@ function tableTest() {
       relatedTableColumnTitle: 'RentalDate',
     });
 
-    const activeColumn = (await customerTable.getColumns()).find(
+    const activeColumn = (await customerTable.getColumns(ctx)).find(
       (c) => c.title === 'Active',
     );
 
@@ -1791,7 +1811,7 @@ function tableTest() {
 
   it('Bulk insert', async function () {
     const table = await createTable(context, base);
-    const columns = await table.getColumns();
+    const columns = await table.getColumns(ctx);
 
     const rowAttributes = Array(99)
       .fill(0)
@@ -1828,7 +1848,7 @@ function tableTest() {
 
   it('Bulk insert 400 records', async function () {
     const table = await createTable(context, base);
-    const columns = await table.getColumns();
+    const columns = await table.getColumns(ctx);
 
     const rowAttributes = Array(400)
       .fill(0)
@@ -1869,7 +1889,7 @@ function tableTest() {
       return;
     }
     const table = await createTable(context, base);
-    const columns = await table.getColumns();
+    const columns = await table.getColumns(ctx);
 
     const rowAttributes = Array(400)
       .fill(0)
@@ -1897,7 +1917,7 @@ function tableTest() {
 
   it('Bulk delete', async function () {
     const table = await createTable(context, base);
-    const columns = await table.getColumns();
+    const columns = await table.getColumns(ctx);
 
     const rowAttributes = Array(400)
       .fill(0)
@@ -2014,7 +2034,7 @@ function tableTest() {
 
   it('Create list hm', async () => {
     const rowId = 1;
-    const rentalListColumn = (await customerTable.getColumns()).find(
+    const rentalListColumn = (await customerTable.getColumns(ctx)).find(
       (column) => column.title === 'Rentals',
     )!;
     const refId = 1;
@@ -2064,9 +2084,7 @@ function tableTest() {
       .set('xc-auth', context.token)
       .expect(404);
 
-    if (
-      response.body.msg !== "Column with id/name 'invalid-column' is not found"
-    ) {
+    if (response.body.message !== "Field 'invalid-column' not found") {
       console.log(response.body);
       throw new Error('Should error out');
     }
@@ -2078,7 +2096,7 @@ function tableTest() {
       base: sakilaProject,
       name: 'actor',
     });
-    const firstNameColumn = (await actorTable.getColumns()).find(
+    const firstNameColumn = (await actorTable.getColumns(ctx)).find(
       (column) => column.title === 'FirstName',
     )!;
     const refId = 1;
@@ -2089,7 +2107,7 @@ function tableTest() {
       .set('xc-auth', context.token)
       .expect(404);
 
-    if (response.body['msg'] !== 'Column not found') {
+    if (response.body.message !== `Field '${firstNameColumn.id}' not found`) {
       console.log(response.body);
       throw new Error('Wrong error message');
     }
@@ -2101,7 +2119,7 @@ function tableTest() {
       base: sakilaProject,
       name: 'actor',
     });
-    const filmListColumn = (await actorTable.getColumns()).find(
+    const filmListColumn = (await actorTable.getColumns(ctx)).find(
       (column) => column.title === 'Films',
     )!;
     const refId = 1;
@@ -2123,7 +2141,7 @@ function tableTest() {
       base: sakilaProject,
       name: 'actor',
     });
-    const filmListColumn = (await actorTable.getColumns()).find(
+    const filmListColumn = (await actorTable.getColumns(ctx)).find(
       (column) => column.title === 'Films',
     )!;
     const refId = 2;
@@ -2164,7 +2182,7 @@ function tableTest() {
       base: sakilaProject,
       name: 'actor',
     });
-    const filmListColumn = (await actorTable.getColumns()).find(
+    const filmListColumn = (await actorTable.getColumns(ctx)).find(
       (column) => column.title === 'Films',
     )!;
     const refId = 1;
@@ -2204,7 +2222,7 @@ function tableTest() {
     if (isSqlite(context) || isPg(context)) return;
 
     const rowId = 1;
-    const rentalListColumn = (await customerTable.getColumns()).find(
+    const rentalListColumn = (await customerTable.getColumns(ctx)).find(
       (column) => column.title === 'Rentals',
     )!;
     const refId = 76;
@@ -2280,7 +2298,7 @@ function tableTest() {
 
   it('Create nested hm relation with invalid table id', async () => {
     const rowId = 1;
-    const rentalListColumn = (await customerTable.getColumns()).find(
+    const rentalListColumn = (await customerTable.getColumns(ctx)).find(
       (column) => column.title === 'Rentals',
     )!;
 
@@ -2291,8 +2309,8 @@ function tableTest() {
       .set('xc-auth', context.token)
       .expect(404);
 
-    if (response.body['msg'] !== 'Table not found') {
-      console.log(response.body['msg']);
+    if (response.body.message !== "Table 'invalid-table-id' not found") {
+      console.log(response.body['message']);
       throw new Error('Wrong error message');
     }
   });
@@ -2303,7 +2321,7 @@ function tableTest() {
       base: sakilaProject,
       name: 'actor',
     });
-    const filmListColumn = (await actorTable.getColumns()).find(
+    const filmListColumn = (await actorTable.getColumns(ctx)).find(
       (column) => column.title === 'Films',
     )!;
     const response = await request(context.app)
@@ -2313,8 +2331,8 @@ function tableTest() {
       .set('xc-auth', context.token)
       .expect(404);
 
-    if (response.body['msg'] !== 'Table not found') {
-      console.log(response.body['msg']);
+    if (response.body.message !== "Table 'invalid-table-id' not found") {
+      console.log(response.body['message']);
       throw new Error('Wrong error message');
     }
   });

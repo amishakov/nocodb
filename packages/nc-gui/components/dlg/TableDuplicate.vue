@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import type { TableType } from 'nocodb-sdk'
+import { type LinkToAnotherRecordType, type TableType, UITypes } from 'nocodb-sdk'
 import { message } from 'ant-design-vue'
-import { useVModel } from '#imports'
 import type { TabType } from '#imports'
 
 const props = defineProps<{
@@ -30,6 +29,8 @@ const baseStore = useBase()
 const { loadTables } = baseStore
 
 const { tables } = storeToRefs(baseStore)
+
+const { getMeta } = useMetas()
 
 const { t } = useI18n()
 
@@ -74,6 +75,20 @@ const _duplicate = async () => {
       }) => {
         if (data.status !== 'close') {
           if (data.status === JobStatus.COMPLETED) {
+            const sourceTable = await getMeta(props.table.id!)
+            if (sourceTable) {
+              for (const col of sourceTable.columns || []) {
+                if ([UITypes.Links, UITypes.LinkToAnotherRecord].includes(col.uidt as UITypes)) {
+                  if (col && col.colOptions) {
+                    const relatedTableId = (col.colOptions as LinkToAnotherRecordType)?.fk_related_model_id
+                    if (relatedTableId) {
+                      await getMeta(relatedTableId, true)
+                    }
+                  }
+                }
+              }
+            }
+
             await loadTables()
             refreshCommandPalette()
             const newTable = tables.value.find((el) => el.id === data?.data?.result?.id)
@@ -114,7 +129,6 @@ const isEaster = ref(false)
   <GeneralModal
     v-model:visible="dialogShow"
     :class="{ active: dialogShow }"
-    :closable="!isLoading"
     :mask-closable="!isLoading"
     :keyboard="!isLoading"
     centered
@@ -124,11 +138,11 @@ const isEaster = ref(false)
     @keydown.esc="dialogShow = false"
   >
     <div>
-      <div class="prose-xl font-bold self-center" @dblclick="isEaster = !isEaster">
+      <div class="font-medium text-lg text-gray-800 self-center" @dblclick="isEaster = !isEaster">
         {{ $t('general.duplicate') }} {{ $t('objects.table') }}
       </div>
 
-      <div class="mt-4">{{ $t('msg.warning.duplicateProject') }}</div>
+      <div class="mt-5">{{ $t('msg.warning.duplicateTable') }}</div>
 
       <div class="prose-md self-center text-gray-500 mt-4">{{ $t('title.advancedSettings') }}</div>
 
@@ -143,8 +157,10 @@ const isEaster = ref(false)
       </div>
     </div>
     <div class="flex flex-row gap-x-2 mt-2.5 pt-2.5 justify-end">
-      <NcButton v-if="!isLoading" key="back" type="secondary" @click="dialogShow = false">{{ $t('general.cancel') }}</NcButton>
-      <NcButton key="submit" v-e="['a:table:duplicate']" type="primary" :loading="isLoading" @click="_duplicate"
+      <NcButton v-if="!isLoading" key="back" type="secondary" size="small" @click="dialogShow = false">{{
+        $t('general.cancel')
+      }}</NcButton>
+      <NcButton key="submit" v-e="['a:table:duplicate']" type="primary" size="small" :loading="isLoading" @click="_duplicate"
         >{{ $t('general.confirm') }}
       </NcButton>
     </div>

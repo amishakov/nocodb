@@ -3,12 +3,26 @@ import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 import { useAgent } from 'request-filtering-agent';
 import { Logger } from '@nestjs/common';
+import dayjs from 'dayjs';
+import { isDateMonthFormat, UITypes } from 'nocodb-sdk';
+import isBetween from 'dayjs/plugin/isBetween';
+import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
+import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import NcPluginMgrv2 from './NcPluginMgrv2';
-import type { Column, FormView, Hook, Model, View } from '~/models';
 import type { HookLogType } from 'nocodb-sdk';
-import { Filter, HookLog } from '~/models';
+import type { Column, FormView, Hook, Model, View } from '~/models';
+import type { NcContext } from '~/interface/config';
+import { Filter, HookLog, Source } from '~/models';
 
-Handlebars.registerHelper('json', function (context) {
+dayjs.extend(isBetween);
+dayjs.extend(isSameOrBefore);
+dayjs.extend(isSameOrAfter);
+
+Handlebars.registerHelper('json', function (context, pretty = false) {
+  if (pretty === true || pretty === 'true') {
+    // Pretty print with 2-space indentation
+    return JSON.stringify(context, null, 2);
+  }
   return JSON.stringify(context);
 });
 
@@ -19,123 +33,338 @@ export function parseBody(template: string, data: any): string {
     return template;
   }
 
-  return Handlebars.compile(template, { noEscape: true })({
-    data,
-  });
+  try {
+    return Handlebars.compile(template, { noEscape: true })({
+      data,
+      event: data,
+    });
+  } catch (e) {
+    // if parsing fails then return the original template
+    return template;
+  }
 }
 
-export async function validateCondition(filters: Filter[], data: any) {
+export async function validateCondition(
+  context: NcContext,
+  filters: Filter[],
+  data: any,
+  {
+    client,
+  }: {
+    client: string;
+  },
+) {
   if (!filters.length) {
     return true;
   }
 
-  let isValid = true;
+  let isValid = null;
   for (const _filter of filters) {
     const filter = _filter instanceof Filter ? _filter : new Filter(_filter);
     let res;
-    const field = await filter.getColumn().then((c) => c.title);
-    let val = data[field];
-    switch (typeof filter.value) {
-      case 'boolean':
-        val = !!data[field];
-        break;
-      case 'number':
-        val = +data[field];
-        break;
-    }
-    switch (filter.comparison_op) {
-      case 'eq':
-        res = val == filter.value;
-        break;
-      case 'neq':
-        res = val != filter.value;
-        break;
-      case 'like':
-        res =
-          data[field]?.toLowerCase()?.indexOf(filter.value?.toLowerCase()) > -1;
-        break;
-      case 'nlike':
-        res =
-          data[field]?.toLowerCase()?.indexOf(filter.value?.toLowerCase()) ===
-          -1;
-        break;
-      case 'empty':
-      case 'blank':
-        res =
-          data[field] === '' ||
-          data[field] === null ||
-          data[field] === undefined;
-        break;
-      case 'notempty':
-      case 'notblank':
-        res = !(
-          data[field] === '' ||
-          data[field] === null ||
-          data[field] === undefined
-        );
-        break;
-      case 'checked':
-        res = !!data[field];
-        break;
-      case 'notchecked':
-        res = !data[field];
-        break;
-      case 'null':
-        res = res = data[field] === null;
-        break;
-      case 'notnull':
-        res = data[field] !== null;
-        break;
-      case 'allof':
-        res = (filter.value?.split(',').map((item) => item.trim()) ?? []).every(
-          (item) => (data[field]?.split(',') ?? []).includes(item),
-        );
-        break;
-      case 'anyof':
-        res = (filter.value?.split(',').map((item) => item.trim()) ?? []).some(
-          (item) => (data[field]?.split(',') ?? []).includes(item),
-        );
-        break;
-      case 'nallof':
-        res = !(
-          filter.value?.split(',').map((item) => item.trim()) ?? []
-        ).every((item) => (data[field]?.split(',') ?? []).includes(item));
-        break;
-      case 'nanyof':
-        res = !(filter.value?.split(',').map((item) => item.trim()) ?? []).some(
-          (item) => (data[field]?.split(',') ?? []).includes(item),
-        );
-        break;
-      case 'lt':
-        res = +data[field] < +filter.value;
-        break;
-      case 'lte':
-      case 'le':
-        res = +data[field] <= +filter.value;
-        break;
-      case 'gt':
-        res = +data[field] > +filter.value;
-        break;
-      case 'gte':
-      case 'ge':
-        res = +data[field] >= +filter.value;
-        break;
+    if (filter.is_group) {
+      res = await validateCondition(
+        context,
+        filter.children || (await filter.getChildren(context)),
+        data,
+        {
+          client,
+        },
+      );
+    } else {
+      const column = await filter.getColumn(context);
+      const field = column.title;
+      let val = data[field];
+      if (
+        [
+          UITypes.Date,
+          UITypes.DateTime,
+          UITypes.CreatedTime,
+          UITypes.LastModifiedTime,
+        ].includes(column.uidt) &&
+        !['empty', 'blank', 'notempty', 'notblank'].includes(
+          filter.comparison_op,
+        )
+      ) {
+        const dateFormat =
+          client === 'mysql2' ? 'YYYY-MM-DD HH:mm:ss' : 'YYYY-MM-DD HH:mm:ssZ';
+
+        let now = dayjs(new Date());
+        const dateFormatFromMeta = column?.meta?.date_format;
+        const dataVal: any = val;
+        let filterVal: any = filter.value;
+        if (dateFormatFromMeta && isDateMonthFormat(dateFormatFromMeta)) {
+          // reset to 1st
+          now = dayjs(now).date(1);
+          if (val) val = dayjs(val).date(1);
+        }
+        if (filterVal) res = dayjs(filterVal).isSame(dataVal, 'day');
+
+        // handle sub operation
+        switch (filter.comparison_sub_op) {
+          case 'today':
+            filterVal = now;
+            break;
+          case 'tomorrow':
+            filterVal = now.add(1, 'day');
+            break;
+          case 'yesterday':
+            filterVal = now.add(-1, 'day');
+            break;
+          case 'oneWeekAgo':
+            filterVal = now.add(-1, 'week');
+            break;
+          case 'oneWeekFromNow':
+            filterVal = now.add(1, 'week');
+            break;
+          case 'oneMonthAgo':
+            filterVal = now.add(-1, 'month');
+            break;
+          case 'oneMonthFromNow':
+            filterVal = now.add(1, 'month');
+            break;
+          case 'daysAgo':
+            if (!filterVal) return;
+            filterVal = now.add(-filterVal, 'day');
+            break;
+          case 'daysFromNow':
+            if (!filterVal) return;
+            filterVal = now.add(filterVal, 'day');
+            break;
+          case 'exactDate':
+            if (!filterVal) return;
+            break;
+          // sub-ops for `isWithin` comparison
+          case 'pastWeek':
+            filterVal = now.add(-1, 'week');
+            break;
+          case 'pastMonth':
+            filterVal = now.add(-1, 'month');
+            break;
+          case 'pastYear':
+            filterVal = now.add(-1, 'year');
+            break;
+          case 'nextWeek':
+            filterVal = now.add(1, 'week');
+            break;
+          case 'nextMonth':
+            filterVal = now.add(1, 'month');
+            break;
+          case 'nextYear':
+            filterVal = now.add(1, 'year');
+            break;
+          case 'pastNumberOfDays':
+            if (!filterVal) return;
+            filterVal = now.add(-filterVal, 'day');
+            break;
+          case 'nextNumberOfDays':
+            if (!filterVal) return;
+            filterVal = now.add(filterVal, 'day');
+            break;
+        }
+
+        if (dataVal) {
+          switch (filter.comparison_op) {
+            case 'eq':
+              res = dayjs(dataVal).isSame(filterVal, 'day');
+              break;
+            case 'neq':
+              res = !dayjs(dataVal).isSame(filterVal, 'day');
+              break;
+            case 'gt':
+              res = dayjs(dataVal).isAfter(filterVal, 'day');
+              break;
+            case 'lt':
+              res = dayjs(dataVal).isBefore(filterVal, 'day');
+              break;
+            case 'lte':
+            case 'le':
+              res = dayjs(dataVal).isSameOrBefore(filterVal, 'day');
+              break;
+            case 'gte':
+            case 'ge':
+              res = dayjs(dataVal).isSameOrAfter(filterVal, 'day');
+              break;
+            case 'empty':
+            case 'blank':
+              res = dataVal === '' || dataVal === null || dataVal === undefined;
+              break;
+            case 'notempty':
+            case 'notblank':
+              res = !(
+                dataVal === '' ||
+                dataVal === null ||
+                dataVal === undefined
+              );
+              break;
+            case 'isWithin': {
+              let now = dayjs(new Date()).format(dateFormat).toString();
+              now = column.uidt === UITypes.Date ? now.substring(0, 10) : now;
+              switch (filter.comparison_sub_op) {
+                case 'pastWeek':
+                case 'pastMonth':
+                case 'pastYear':
+                case 'pastNumberOfDays':
+                  res = dayjs(dataVal).isBetween(filterVal, now, 'day');
+                  break;
+                case 'nextWeek':
+                case 'nextMonth':
+                case 'nextYear':
+                case 'nextNumberOfDays':
+                  res = dayjs(dataVal).isBetween(now, filterVal, 'day');
+                  break;
+              }
+            }
+          }
+        }
+      } else {
+        switch (typeof filter.value) {
+          case 'boolean':
+            val = !!data[field];
+            break;
+          case 'number':
+            val = +data[field];
+            break;
+        }
+
+        if (
+          [UITypes.User, UITypes.CreatedBy, UITypes.LastModifiedBy].includes(
+            column.uidt,
+          )
+        ) {
+          const userIds = Array.isArray(data[field])
+            ? data[field].map((user) => user.id)
+            : data[field]?.id
+            ? [data[field].id]
+            : [];
+
+          const filterValues = filter.value.split(',').map((v) => v.trim());
+
+          switch (filter.comparison_op) {
+            case 'anyof':
+              res = userIds.some((id) => filterValues.includes(id));
+              break;
+            case 'nanyof':
+              res = !userIds.some((id) => filterValues.includes(id));
+              break;
+            case 'allof':
+              res = filterValues.every((id) => userIds.includes(id));
+              break;
+            case 'nallof':
+              res = !filterValues.every((id) => userIds.includes(id));
+              break;
+            case 'empty':
+            case 'blank':
+              res = userIds.length === 0;
+              break;
+            case 'notempty':
+            case 'notblank':
+              res = userIds.length > 0;
+              break;
+            default:
+              res = false; // Unsupported operation for User fields
+          }
+        } else {
+          switch (filter.comparison_op) {
+            case 'eq':
+              res = val == filter.value;
+              break;
+            case 'neq':
+              res = val != filter.value;
+              break;
+            case 'like':
+              res =
+                data[field]
+                  ?.toString?.()
+                  ?.toLowerCase()
+                  ?.indexOf(filter.value?.toLowerCase()) > -1;
+              break;
+            case 'nlike':
+              res =
+                data[field]
+                  ?.toString?.()
+                  ?.toLowerCase()
+                  ?.indexOf(filter.value?.toLowerCase()) === -1;
+              break;
+            case 'empty':
+            case 'blank':
+              res =
+                data[field] === '' ||
+                data[field] === null ||
+                data[field] === undefined;
+              break;
+            case 'notempty':
+            case 'notblank':
+              res = !(
+                data[field] === '' ||
+                data[field] === null ||
+                data[field] === undefined
+              );
+              break;
+            case 'checked':
+              res = !!data[field];
+              break;
+            case 'notchecked':
+              res = !data[field];
+              break;
+            case 'null':
+              res = res = data[field] === null;
+              break;
+            case 'notnull':
+              res = data[field] !== null;
+              break;
+            case 'allof':
+              res = (
+                filter.value?.split(',').map((item) => item.trim()) ?? []
+              ).every((item) => (data[field]?.split(',') ?? []).includes(item));
+              break;
+            case 'anyof':
+              res = (
+                filter.value?.split(',').map((item) => item.trim()) ?? []
+              ).some((item) => (data[field]?.split(',') ?? []).includes(item));
+              break;
+            case 'nallof':
+              res = !(
+                filter.value?.split(',').map((item) => item.trim()) ?? []
+              ).every((item) => (data[field]?.split(',') ?? []).includes(item));
+              break;
+            case 'nanyof':
+              res = !(
+                filter.value?.split(',').map((item) => item.trim()) ?? []
+              ).some((item) => (data[field]?.split(',') ?? []).includes(item));
+              break;
+            case 'lt':
+              res = +data[field] < +filter.value;
+              break;
+            case 'lte':
+            case 'le':
+              res = +data[field] <= +filter.value;
+              break;
+            case 'gt':
+              res = +data[field] > +filter.value;
+              break;
+            case 'gte':
+            case 'ge':
+              res = +data[field] >= +filter.value;
+              break;
+          }
+        }
+      }
     }
 
     switch (filter.logical_op) {
       case 'or':
-        isValid = isValid || res;
+        isValid = isValid || !!res;
         break;
       case 'not':
         isValid = isValid && !res;
         break;
       case 'and':
       default:
-        isValid = isValid && res;
+        isValid = (isValid ?? true) && res;
         break;
     }
   }
-
   return isValid;
 }
 
@@ -182,11 +411,19 @@ export async function handleHttpWebHook(
   prevData,
   newData,
 ): Promise<any> {
+  if (!apiMeta) {
+    apiMeta = {};
+  }
+
   const contentType = apiMeta.headers?.find(
     (header) => header.name?.toLowerCase() === 'content-type' && header.enabled,
   );
 
   if (!contentType) {
+    if (!apiMeta.headers) {
+      apiMeta.headers = [];
+    }
+
     apiMeta.headers.push({
       name: 'Content-Type',
       enabled: true,
@@ -269,23 +506,41 @@ export function axiosRequestMake(_apiMeta, _user, data) {
           }),
         }
       : {}),
+    timeout: 30 * 1000,
   };
   return req;
 }
 
 export async function invokeWebhook(
-  hook: Hook,
-  model: Model,
-  view: View,
-  prevData,
-  newData,
-  user,
-  testFilters = null,
-  throwErrorOnFailure = false,
-  testHook = false,
+  context: NcContext,
+  param: {
+    hook: Hook;
+    model: Model;
+    view: View;
+    prevData;
+    newData;
+    user;
+    testFilters?;
+    throwErrorOnFailure?: boolean;
+    testHook?: boolean;
+  },
 ) {
+  const {
+    hook,
+    model,
+    view,
+    prevData,
+    user,
+    testFilters = null,
+    throwErrorOnFailure = false,
+    testHook = false,
+  } = param;
+
+  let { newData } = param;
+
   let hookLog: HookLogType;
   const startTime = process.hrtime();
+  const source = await Source.get(context, model.source_id);
   let notification;
   try {
     notification =
@@ -301,7 +556,7 @@ export async function invokeWebhook(
     }
 
     if (hook.condition && !testHook) {
-      const filters = testFilters || (await hook.getFilters());
+      const filters = testFilters || (await hook.getFilters(context));
 
       if (isBulkOperation) {
         const filteredData = [];
@@ -323,8 +578,10 @@ export async function invokeWebhook(
 
           if (
             await validateCondition(
-              testFilters || (await hook.getFilters()),
+              context,
+              testFilters || (await hook.getFilters(context)),
               data,
+              { client: source?.type },
             )
           ) {
             filteredData.push(data);
@@ -340,14 +597,18 @@ export async function invokeWebhook(
         if (
           prevData &&
           filters.length &&
-          (await validateCondition(filters, prevData))
+          (await validateCondition(context, filters, prevData, {
+            client: source?.type,
+          }))
         ) {
           return;
         }
         if (
           !(await validateCondition(
-            testFilters || (await hook.getFilters()),
+            context,
+            testFilters || (await hook.getFilters(context)),
             newData,
+            { client: source?.type },
           ))
         ) {
           return;
@@ -478,7 +739,11 @@ export async function invokeWebhook(
       hookLog.execution_time = parseHrtimeToMilliSeconds(
         process.hrtime(startTime),
       );
-      HookLog.insert({ ...hookLog, test_call: testHook });
+      HookLog.insert(context, { ...hookLog, test_call: testHook }).catch(
+        (e) => {
+          logger.error(e.message, e.stack);
+        },
+      );
     }
   }
 }
@@ -499,16 +764,9 @@ export function _transformSubmittedFormDataForEmail(
       }
       transformedData[col.title] = (transformedData[col.title] || [])
         .map((attachment) => {
-          if (
-            ['jpeg', 'gif', 'png', 'apng', 'svg', 'bmp', 'ico', 'jpg'].includes(
-              attachment.title.split('.').pop(),
-            )
-          ) {
-            return `<a href="${attachment.url}" target="_blank"><img height="50px" src="${attachment.url}"/></a>`;
-          }
-          return `<a href="${attachment.url}" target="_blank">${attachment.title}</a>`;
+          return attachment.title;
         })
-        .join('&nbsp;');
+        .join('<br/>');
     } else if (
       transformedData[col.title] &&
       typeof transformedData[col.title] === 'object'

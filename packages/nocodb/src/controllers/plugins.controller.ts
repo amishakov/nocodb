@@ -14,6 +14,7 @@ import { PagedResponseImpl } from '~/helpers/PagedResponse';
 import { PluginsService } from '~/services/plugins.service';
 import { Acl } from '~/middlewares/extract-ids/extract-ids.middleware';
 import { MetaApiLimiterGuard } from '~/guards/meta-api-limiter.guard';
+import { NcRequest } from '~/interface/config';
 
 // todo: move to a interceptor
 // const blockInCloudMw = (_req, res, next) => {
@@ -48,7 +49,7 @@ export class PluginsController {
   @Acl('pluginTest', {
     scope: 'org',
   })
-  async pluginTest(@Body() body: any, @Req() req: Request) {
+  async pluginTest(@Body() body: any, @Req() req: NcRequest) {
     return await this.pluginsService.pluginTest({ body: body, req });
   }
 
@@ -70,7 +71,7 @@ export class PluginsController {
   async pluginUpdate(
     @Body() body: any,
     @Param('pluginId') pluginId: string,
-    @Req() req: Request,
+    @Req() req: NcRequest,
   ) {
     const plugin = await this.pluginsService.pluginUpdate({
       pluginId: pluginId,
@@ -81,15 +82,15 @@ export class PluginsController {
   }
 
   @Get([
-    '/api/v1/db/meta/plugins/:pluginTitle/status',
-    '/api/v2/meta/plugins/:pluginTitle/status',
+    '/api/v1/db/meta/plugins/:pluginId/status',
+    '/api/v2/meta/plugins/:pluginId/status',
   ])
   @Acl('isPluginActive', {
     scope: 'org',
   })
-  async isPluginActive(@Param('pluginTitle') pluginTitle: string) {
+  async isPluginActive(@Param('pluginId') pluginId: string) {
     return await this.pluginsService.isPluginActive({
-      pluginTitle: pluginTitle,
+      pluginId,
     });
   }
 }

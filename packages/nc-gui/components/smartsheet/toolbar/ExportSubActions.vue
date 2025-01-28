@@ -1,20 +1,8 @@
 <script setup lang="ts">
 import type { RequestParams } from 'nocodb-sdk'
 import { ExportTypes } from 'nocodb-sdk'
-import {
-  ActiveViewInj,
-  FieldsInj,
-  IsPublicInj,
-  MetaInj,
-  extractSdkResponseErrorMsg,
-  iconMap,
-  inject,
-  message,
-  ref,
-  storeToRefs,
-  useBase,
-  useNuxtApp,
-} from '#imports'
+import { saveAs } from 'file-saver'
+import * as XLSX from 'xlsx'
 
 const isPublicView = inject(IsPublicInj, ref(false))
 
@@ -39,9 +27,6 @@ const exportFile = async (exportType: ExportTypes) => {
   const responseType = exportType === ExportTypes.EXCEL ? 'base64' : 'blob'
 
   isExportingType.value = exportType
-
-  const XLSX = await import('xlsx')
-  const FileSaver = await import('file-saver')
 
   try {
     while (!isNaN(offset) && offset > -1) {
@@ -80,7 +65,7 @@ const exportFile = async (exportType: ExportTypes) => {
       } else if (exportType === ExportTypes.CSV) {
         const blob = new Blob([data], { type: 'text/plain;charset=utf-8' })
 
-        FileSaver.saveAs(blob, `${meta.value?.title}_exported_${c++}.csv`)
+        saveAs(blob, `${meta.value?.title}_exported_${c++}.csv`)
       }
 
       offset = +headers['nc-export-offset']
@@ -90,38 +75,33 @@ const exportFile = async (exportType: ExportTypes) => {
       }, 200)
     }
   } catch (e: any) {
+    isExportingType.value = undefined
     message.error(await extractSdkResponseErrorMsg(e))
   }
 }
 </script>
 
 <template>
-  <div class="flex py-3 px-4 font-bold uppercase text-xs text-gray-500">{{ $t('labels.downloadData') }}</div>
+  <NcMenuItemLabel>
+    {{ $t('labels.downloadData') }}
+  </NcMenuItemLabel>
 
-  <a-menu-item class="!mx-1 !py-2 !rounded-md">
-    <div
-      v-e="['a:download:csv']"
-      class="flex flex-row items-center nc-base-menu-item !py-0"
-      @click.stop="exportFile(ExportTypes.CSV)"
-    >
-      <GeneralLoader v-if="isExportingType === ExportTypes.CSV" class="!max-h-4.5 !-mt-1 !mr-0.7" />
-      <component :is="iconMap.csv" v-else />
+  <NcMenuItem v-e="['a:download:csv']" @click.stop="exportFile(ExportTypes.CSV)">
+    <div class="flex flex-row items-center nc-base-menu-item !py-0 children:flex-none">
+      <GeneralLoader v-if="isExportingType === ExportTypes.CSV" size="regular" />
+      <component :is="iconMap.ncFileTypeCsvSmall" v-else class="w-4" />
       <!-- Download as CSV -->
-      {{ $t('activity.downloadCSV') }}
+      CSV
     </div>
-  </a-menu-item>
+  </NcMenuItem>
 
-  <a-menu-item class="!mx-1 !py-2 !rounded-md">
-    <div
-      v-e="['a:download:excel']"
-      class="flex flex-row items-center nc-base-menu-item !py-0"
-      @click="exportFile(ExportTypes.EXCEL)"
-    >
-      <GeneralLoader v-if="isExportingType === ExportTypes.EXCEL" class="!max-h-4.5 !-mt-1 !mr-0.7" />
-      <component :is="iconMap.excel" v-else />
+  <NcMenuItem v-e="['a:download:excel']" @click.stop="exportFile(ExportTypes.EXCEL)">
+    <div class="flex flex-row items-center nc-base-menu-item !py-0 children:flex-none">
+      <GeneralLoader v-if="isExportingType === ExportTypes.EXCEL" size="regular" />
+      <component :is="iconMap.ncFileTypeExcel" v-else class="w-4" />
 
       <!-- Download as XLSX -->
-      {{ $t('activity.downloadExcel') }}
+      Excel
     </div>
-  </a-menu-item>
+  </NcMenuItem>
 </template>

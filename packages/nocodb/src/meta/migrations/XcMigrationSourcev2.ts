@@ -25,6 +25,43 @@ import * as nc_035_add_username_to_users from '~/meta/migrations/v2/nc_035_add_u
 import * as nc_036_base_deleted from '~/meta/migrations/v2/nc_036_base_deleted';
 import * as nc_037_rename_project_and_base from '~/meta/migrations/v2/nc_037_rename_project_and_base';
 import * as nc_038_formula_parsed_tree_column from '~/meta/migrations/v2/nc_038_formula_parsed_tree_column';
+import * as nc_039_sqlite_alter_column_types from '~/meta/migrations/v2/nc_039_sqlite_alter_column_types';
+import * as nc_040_form_view_alter_column_types from '~/meta/migrations/v2/nc_040_form_view_alter_column_types';
+import * as nc_041_calendar_view from '~/meta/migrations/v2/nc_041_calendar_view';
+import * as nc_042_user_block from '~/meta/migrations/v2/nc_042_user_block';
+import * as nc_043_user_refresh_token from '~/meta/migrations/v2/nc_043_user_refresh_token';
+import * as nc_044_view_column_index from '~/meta/migrations/v2/nc_044_view_column_index';
+import * as nc_045_extensions from '~/meta/migrations/v2/nc_045_extensions';
+import * as nc_046_comment_mentions from '~/meta/migrations/v2/nc_046_comment_mentions';
+import * as nc_047_comment_migration from '~/meta/migrations/v2/nc_047_comment_migration';
+import * as nc_048_view_links from '~/meta/migrations/v2/nc_048_view_links';
+import * as nc_049_clear_notifications from '~/meta/migrations/v2/nc_049_clear_notifications';
+import * as nc_050_tenant_isolation from '~/meta/migrations/v2/nc_050_tenant_isolation';
+import * as nc_051_source_readonly_columns from '~/meta/migrations/v2/nc_051_source_readonly_columns';
+import * as nc_052_field_aggregation from '~/meta/migrations/v2/nc_052_field_aggregation';
+import * as nc_053_jobs from '~/meta/migrations/v2/nc_053_jobs';
+import * as nc_054_id_length from '~/meta/migrations/v2/nc_054_id_length';
+import * as nc_055_junction_pk from '~/meta/migrations/v2/nc_055_junction_pk';
+import * as nc_056_integration from '~/meta/migrations/v2/nc_056_integration';
+import * as nc_057_file_references from '~/meta/migrations/v2/nc_057_file_references';
+import * as nc_058_button_colum from '~/meta/migrations/v2/nc_058_button_colum';
+import * as nc_059_invited_by from '~/meta/migrations/v2/nc_059_invited_by';
+import * as nc_060_descriptions from '~/meta/migrations/v2/nc_060_descriptions';
+import * as nc_061_integration_is_default from '~/meta/migrations/v2/nc_061_integration_is_default';
+import * as nc_062_integration_store from '~/meta/migrations/v2/nc_062_integration_store';
+import * as nc_063_form_field_filter from '~/meta/migrations/v2/nc_063_form_field_filter';
+import * as nc_064_pg_minimal_dbs from '~/meta/migrations/v2/nc_064_pg_minimal_dbs';
+import * as nc_065_encrypt_flag from '~/meta/migrations/v2/nc_065_encrypt_flag';
+import * as nc_066_ai_button from '~/meta/migrations/v2/nc_066_ai_button';
+import * as nc_067_personal_view from '~/meta/migrations/v2/nc_067_personal_view';
+import * as nc_068_user_delete from '~/meta/migrations/v2/nc_068_user_delete';
+import * as nc_069_ai_prompt from '~/meta/migrations/v2/nc_069_ai_prompt';
+import * as nc_070_data_reflection from '~/meta/migrations/v2/nc_070_data_reflection';
+import * as nc_071_add_meta_in_users from '~/meta/migrations/v2/nc_071_add_meta_in_users';
+import * as nc_072_col_button_pk from '~/meta/migrations/v2/nc_072_col_button_pk';
+import * as nc_073_file_reference_indexes from '~/meta/migrations/v2/nc_073_file_reference_indexes';
+import * as nc_074_missing_context_indexes from '~/meta/migrations/v2/nc_074_missing_context_indexes';
+import * as nc_075_audit_refactor from '~/meta/migrations/v2/nc_075_audit_refactor';
 
 // Create a custom migration source class
 export default class XcMigrationSourcev2 {
@@ -61,6 +98,43 @@ export default class XcMigrationSourcev2 {
       'nc_036_base_deleted',
       'nc_037_rename_project_and_base',
       'nc_038_formula_parsed_tree_column',
+      'nc_039_sqlite_alter_column_types',
+      'nc_040_form_view_alter_column_types',
+      'nc_041_calendar_view',
+      'nc_042_user_block',
+      'nc_043_user_refresh_token',
+      'nc_044_view_column_index',
+      'nc_045_extensions',
+      'nc_046_comment_mentions',
+      'nc_047_comment_migration',
+      'nc_048_view_links',
+      'nc_049_clear_notifications',
+      'nc_050_tenant_isolation',
+      'nc_051_source_readonly_columns',
+      'nc_052_field_aggregation',
+      'nc_053_jobs',
+      'nc_054_id_length',
+      'nc_055_junction_pk',
+      'nc_056_integration',
+      'nc_057_file_references',
+      'nc_058_button_colum',
+      'nc_059_invited_by',
+      'nc_060_descriptions',
+      'nc_061_integration_is_default',
+      'nc_062_integration_store',
+      'nc_063_form_field_filter',
+      'nc_064_pg_minimal_dbs',
+      'nc_065_encrypt_flag',
+      'nc_066_ai_button',
+      'nc_067_personal_view',
+      'nc_068_user_delete',
+      'nc_069_ai_prompt',
+      'nc_070_data_reflection',
+      'nc_071_add_meta_in_users',
+      'nc_072_col_button_pk',
+      'nc_073_file_reference_indexes',
+      'nc_074_missing_context_indexes',
+      'nc_075_audit_refactor',
     ]);
   }
 
@@ -124,6 +198,80 @@ export default class XcMigrationSourcev2 {
         return nc_037_rename_project_and_base;
       case 'nc_038_formula_parsed_tree_column':
         return nc_038_formula_parsed_tree_column;
+      case 'nc_039_sqlite_alter_column_types':
+        return nc_039_sqlite_alter_column_types;
+      case 'nc_040_form_view_alter_column_types':
+        return nc_040_form_view_alter_column_types;
+      case 'nc_041_calendar_view':
+        return nc_041_calendar_view;
+      case 'nc_042_user_block':
+        return nc_042_user_block;
+      case 'nc_043_user_refresh_token':
+        return nc_043_user_refresh_token;
+      case 'nc_044_view_column_index':
+        return nc_044_view_column_index;
+      case 'nc_045_extensions':
+        return nc_045_extensions;
+      case 'nc_046_comment_mentions':
+        return nc_046_comment_mentions;
+      case 'nc_047_comment_migration':
+        return nc_047_comment_migration;
+      case 'nc_048_view_links':
+        return nc_048_view_links;
+      case 'nc_049_clear_notifications':
+        return nc_049_clear_notifications;
+      case 'nc_050_tenant_isolation':
+        return nc_050_tenant_isolation;
+      case 'nc_051_source_readonly_columns':
+        return nc_051_source_readonly_columns;
+      case 'nc_052_field_aggregation':
+        return nc_052_field_aggregation;
+      case 'nc_053_jobs':
+        return nc_053_jobs;
+      case 'nc_054_id_length':
+        return nc_054_id_length;
+      case 'nc_055_junction_pk':
+        return nc_055_junction_pk;
+      case 'nc_056_integration':
+        return nc_056_integration;
+      case 'nc_057_file_references':
+        return nc_057_file_references;
+      case 'nc_058_button_colum':
+        return nc_058_button_colum;
+      case 'nc_059_invited_by':
+        return nc_059_invited_by;
+      case 'nc_060_descriptions':
+        return nc_060_descriptions;
+      case 'nc_061_integration_is_default':
+        return nc_061_integration_is_default;
+      case 'nc_062_integration_store':
+        return nc_062_integration_store;
+      case 'nc_063_form_field_filter':
+        return nc_063_form_field_filter;
+      case 'nc_064_pg_minimal_dbs':
+        return nc_064_pg_minimal_dbs;
+      case 'nc_065_encrypt_flag':
+        return nc_065_encrypt_flag;
+      case 'nc_066_ai_button':
+        return nc_066_ai_button;
+      case 'nc_067_personal_view':
+        return nc_067_personal_view;
+      case 'nc_068_user_delete':
+        return nc_068_user_delete;
+      case 'nc_069_ai_prompt':
+        return nc_069_ai_prompt;
+      case 'nc_070_data_reflection':
+        return nc_070_data_reflection;
+      case 'nc_071_add_meta_in_users':
+        return nc_071_add_meta_in_users;
+      case 'nc_072_col_button_pk':
+        return nc_072_col_button_pk;
+      case 'nc_073_file_reference_indexes':
+        return nc_073_file_reference_indexes;
+      case 'nc_074_missing_context_indexes':
+        return nc_074_missing_context_indexes;
+      case 'nc_075_audit_refactor':
+        return nc_075_audit_refactor;
     }
   }
 }

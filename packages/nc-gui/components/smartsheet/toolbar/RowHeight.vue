@@ -1,6 +1,24 @@
 <script setup lang="ts">
 import type { GridType } from 'nocodb-sdk'
-import { ActiveViewInj, IsLockedInj, iconMap, inject, ref, storeToRefs, useMenuCloseOnEsc, useUndoRedo } from '#imports'
+
+const rowHeightOptions: { icon: keyof typeof iconMap; heightClass: string }[] = [
+  {
+    icon: 'heightShort',
+    heightClass: 'short',
+  },
+  {
+    icon: 'heightMedium',
+    heightClass: 'medium',
+  },
+  {
+    icon: 'heightTall',
+    heightClass: 'tall',
+  },
+  {
+    icon: 'heightExtra',
+    heightClass: 'extra',
+  },
+]
 
 const { isSharedBase } = storeToRefs(useBase())
 
@@ -10,6 +28,8 @@ const isPublic = inject(IsPublicInj, ref(false))
 
 const isLocked = inject(IsLockedInj, ref(false))
 
+const { isUIAllowed } = useRoles()
+
 const { $api } = useNuxtApp()
 
 const { addUndo, defineViewScope } = useUndoRedo()
@@ -17,9 +37,10 @@ const { addUndo, defineViewScope } = useUndoRedo()
 const open = ref(false)
 
 const updateRowHeight = async (rh: number, undo = false) => {
+  if (isLocked.value) return
+
   if (view.value?.id) {
     if (rh === (view.value.view as GridType).row_height) return
-
     if (!undo) {
       addUndo({
         redo: {
@@ -35,7 +56,7 @@ const updateRowHeight = async (rh: number, undo = false) => {
     }
 
     try {
-      if (!isPublic.value && !isSharedBase.value) {
+      if (!isPublic.value && !isSharedBase.value && isUIAllowed('viewCreateOrEdit')) {
         await $api.dbView.gridUpdate(view.value.id, {
           row_height: rh,
         })
@@ -44,8 +65,8 @@ const updateRowHeight = async (rh: number, undo = false) => {
       ;(view.value.view as GridType).row_height = rh
 
       open.value = false
-    } catch (e) {
-      message.error('There was an error while updating view!')
+    } catch (e: any) {
+      message.error((await extractSdkResponseErrorMsg(e)) || 'There was an error while updating view!')
     }
   }
 }
@@ -56,49 +77,48 @@ useMenuCloseOnEsc(open)
 <template>
   <a-dropdown v-model:visible="open" offset-y class="" :trigger="['click']" overlay-class-name="nc-dropdown-height-menu">
     <div>
-      <a-button v-e="['c:row-height']" class="nc-height-menu-btn nc-toolbar-btn" :disabled="isLocked">
+      <NcButton
+        v-e="['c:row-height']"
+        class="nc-height-menu-btn nc-toolbar-btn !border-0 !h-7 !px-1.5 !min-w-7"
+        size="small"
+        type="secondary"
+        :show-as-disabled="isLocked"
+      >
         <div class="flex items-center gap-0.5">
           <component :is="iconMap.rowHeight" class="!h-3.75 !w-3.75" />
           <!-- <span v-if="!isMobileMode" class="!text-sm !font-medium">{{ $t('objects.rowHeight') }}</span> -->
         </div>
-      </a-button>
+      </NcButton>
     </div>
     <template #overlay>
       <div
-        class="w-full bg-white shadow-lg p-1.5 menu-filter-dropdown border-1 border-gray-200 rounded-md overflow-hidden"
+        class="w-full bg-white shadow-lg p-1.5 menu-filter-dropdown border-1 border-gray-200 rounded-lg overflow-hidden min-w-[160px]"
         data-testid="nc-height-menu"
       >
         <div class="flex flex-col w-full text-sm" @click.stop>
           <div class="text-xs text-gray-500 px-3 pt-2 pb-1 select-none">{{ $t('objects.rowHeight') }}</div>
-          <div class="nc-row-height-option" @click="updateRowHeight(0)">
-            <GeneralIcon icon="heightShort" class="nc-row-height-icon" />
-            {{ $t('objects.heightClass.short') }}
-            <component :is="iconMap.check" v-if="!(view?.view as GridType).row_height" class="text-primary w-4 h-4" />
-          </div>
-          <div class="nc-row-height-option" @click="updateRowHeight(1)">
-            <GeneralIcon icon="heightMedium" class="nc-row-height-icon" />
-            {{ $t('objects.heightClass.medium') }}
-            <component :is="iconMap.check" v-if=" (view?.view as GridType).row_height === 1" class="text-primary w-4 h-4" />
-          </div>
           <div
+            v-for="(item, i) of rowHeightOptions"
+            :key="i"
             class="nc-row-height-option"
-            :class="{'active': (view?.view as GridType).row_height === 2}"
-            @click="updateRowHeight(2)"
+            :class="{
+              'hover:bg-gray-100 cursor-pointer': !isLocked,
+              'cursor-not-allowed': isLocked,
+            }"
+            @click="updateRowHeight(i)"
           >
-            <GeneralIcon icon="heightTall" class="nc-row-height-icon" />
-            {{ $t('objects.heightClass.tall') }}
-            <component :is="iconMap.check" v-if=" (view?.view as GridType).row_height === 2" class="text-primary w-4 h-4" />
-          </div>
-          <div
-            class="nc-row-height-option"
-            :class="{'active': (view?.view as GridType).row_height === 3}"
-            @click="updateRowHeight(3)"
-          >
-            <GeneralIcon icon="heightExtra" class="nc-row-height-icon" />
-            {{ $t('objects.heightClass.extra') }}
-            <component :is="iconMap.check" v-if=" (view?.view as GridType).row_height === 3" class="text-primary w-4 h-4" />
+            <div class="flex items-center gap-2">
+              <GeneralIcon :icon="item.icon" class="nc-row-height-icon" />
+              {{ $t(`objects.heightClass.${item.heightClass}`) }}
+            </div>
+            <component
+              :is="iconMap.check"
+              v-if="i === 0 ? !(view?.view as GridType).row_height: (view?.view as GridType).row_height === i"
+              class="text-primary w-4 h-4"
+            />
           </div>
         </div>
+        <GeneralLockedViewFooter v-if="isLocked" class="-mx-1.5 -mb-1.5" @on-open="open = false" />
       </div>
     </template>
   </a-dropdown>
@@ -106,7 +126,7 @@ useMenuCloseOnEsc(open)
 
 <style scoped>
 .nc-row-height-option {
-  @apply flex items-center gap-2 p-2 justify-start hover:bg-gray-100 rounded-md cursor-pointer text-gray-600;
+  @apply flex items-center gap-2 p-2 justify-between rounded-md text-gray-600;
 }
 
 .nc-row-height-icon {

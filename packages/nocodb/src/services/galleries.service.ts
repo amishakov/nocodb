@@ -5,69 +5,121 @@ import type {
   UserType,
   ViewCreateReqType,
 } from 'nocodb-sdk';
-import type { NcRequest } from '~/interface/config';
+import type { NcContext, NcRequest } from '~/interface/config';
 import { AppHooksService } from '~/services/app-hooks/app-hooks.service';
 import { validatePayload } from '~/helpers';
 import { NcError } from '~/helpers/catchError';
-import { GalleryView, View } from '~/models';
+import { GalleryView, Model, User, View } from '~/models';
+import NocoCache from '~/cache/NocoCache';
+import { CacheScope } from '~/utils/globals';
 
 @Injectable()
 export class GalleriesService {
   constructor(private readonly appHooksService: AppHooksService) {}
 
-  async galleryViewGet(param: { galleryViewId: string }) {
-    return await GalleryView.get(param.galleryViewId);
+  async galleryViewGet(context: NcContext, param: { galleryViewId: string }) {
+    return await GalleryView.get(context, param.galleryViewId);
   }
 
-  async galleryViewCreate(param: {
-    tableId: string;
-    gallery: ViewCreateReqType;
-    user: UserType;
-
-    req: NcRequest;
-  }) {
+  async galleryViewCreate(
+    context: NcContext,
+    param: {
+      tableId: string;
+      gallery: ViewCreateReqType;
+      user: UserType;
+      ownedBy?: string;
+      req: NcRequest;
+    },
+  ) {
     validatePayload(
       'swagger.json#/components/schemas/ViewCreateReq',
       param.gallery,
     );
 
-    const view = await View.insert({
-      ...param.gallery,
-      // todo: sanitize
-      fk_model_id: param.tableId,
-      type: ViewTypes.GALLERY,
+    const model = await Model.get(context, param.tableId);
+
+    const { id } = await View.insertMetaOnly(context, {
+      view: {
+        ...param.gallery,
+        // todo: sanitize
+        fk_model_id: param.tableId,
+        type: ViewTypes.GALLERY,
+        base_id: model.base_id,
+        source_id: model.source_id,
+        created_by: param.user?.id,
+        owned_by: param.ownedBy || param.user?.id,
+      },
+      model,
+      req: param.req,
     });
 
-    this.appHooksService.emit(AppEvents.VIEW_CREATE, {
-      view,
-      showAs: 'gallery',
+    // populate  cache and add to list since the list cache already exist
+    const view = await View.get(context, id);
+    await NocoCache.appendToList(
+      CacheScope.VIEW,
+      [view.fk_model_id],
+      `${CacheScope.VIEW}:${id}`,
+    );
+
+    let owner = param.req.user;
+
+    if (param.ownedBy) {
+      owner = await User.get(param.ownedBy);
+    }
+
+    this.appHooksService.emit(AppEvents.GALLERY_CREATE, {
+      view: {
+        ...param.gallery,
+        ...view,
+      },
       req: param.req,
+      owner,
+      context,
     });
     return view;
   }
 
-  async galleryViewUpdate(param: {
-    galleryViewId: string;
-    gallery: GalleryUpdateReqType;
-    req: NcRequest;
-  }) {
+  async galleryViewUpdate(
+    context: NcContext,
+    param: {
+      galleryViewId: string;
+      gallery: GalleryUpdateReqType;
+      req: NcRequest;
+    },
+  ) {
     validatePayload(
       'swagger.json#/components/schemas/GalleryUpdateReq',
       param.gallery,
     );
 
-    const view = await View.get(param.galleryViewId);
+    const view = await View.get(context, param.galleryViewId);
 
     if (!view) {
-      NcError.badRequest('View not found');
+      NcError.viewNotFound(param.galleryViewId);
     }
 
-    const res = await GalleryView.update(param.galleryViewId, param.gallery);
+    const oldGalleryView = await GalleryView.get(context, param.galleryViewId);
 
-    this.appHooksService.emit(AppEvents.VIEW_UPDATE, {
+    const res = await GalleryView.update(
+      context,
+      param.galleryViewId,
+      param.gallery,
+    );
+
+    let owner = param.req.user;
+
+    if (view.owned_by && view.owned_by !== param.req.user?.id) {
+      owner = await User.get(view.owned_by);
+    }
+
+    this.appHooksService.emit(AppEvents.GALLERY_UPDATE, {
       view,
-      showAs: 'gallery',
+      galleryView: param.gallery,
+      oldGalleryView,
+      oldView: view,
       req: param.req,
+      context,
+      owner,
     });
 
     return res;

@@ -4,6 +4,12 @@ export enum OrgUserRoles {
   VIEWER = 'org-level-viewer',
 }
 
+export enum CloudOrgUserRoles {
+  CREATOR = 'cloud-org-level-creator',
+  VIEWER = 'cloud-org-level-viewer',
+  OWNER = 'cloud-org-level-owner',
+}
+
 export enum ProjectRoles {
   OWNER = 'owner',
   CREATOR = 'creator',
@@ -16,9 +22,10 @@ export enum ProjectRoles {
 export enum WorkspaceUserRoles {
   OWNER = 'workspace-level-owner',
   CREATOR = 'workspace-level-creator',
-  VIEWER = 'workspace-level-viewer',
   EDITOR = 'workspace-level-editor',
   COMMENTER = 'workspace-level-commenter',
+  VIEWER = 'workspace-level-viewer',
+  NO_ACCESS = 'workspace-level-no-access',
 }
 
 export enum AppEvents {
@@ -32,13 +39,16 @@ export enum AppEvents {
 
   WELCOME = 'app.welcome',
 
+  WORKSPACE_USER_INVITE = 'workspace.invite',
+  WORKSPACE_USER_UPDATE = 'workspace.user.update',
+  WORKSPACE_USER_DELETE = 'workspace.user.delete',
   WORKSPACE_CREATE = 'workspace.create',
-  WORKSPACE_INVITE = 'workspace.invite',
   WORKSPACE_DELETE = 'workspace.delete',
   WORKSPACE_UPDATE = 'workspace.update',
 
   USER_SIGNUP = 'user.signup',
   USER_SIGNIN = 'user.signin',
+  USER_INVITE = 'user.invite',
   USER_UPDATE = 'user.update',
   USER_PASSWORD_RESET = 'user.password.reset',
   USER_PASSWORD_CHANGE = 'user.password.change',
@@ -82,11 +92,8 @@ export enum AppEvents {
 
   API_TOKEN_CREATE = 'api.token.create',
   API_TOKEN_DELETE = 'api.token.delete',
+  API_TOKEN_UPDATE = 'api.token.update',
   IMAGE_UPLOAD = 'image.upload',
-
-  BASE_CREATE = 'source.create',
-  BASE_DELETE = 'source.delete',
-  BASE_UPDATE = 'source.update',
 
   FORM_COLUMN_UPDATE = 'form.column.update',
 
@@ -96,11 +103,12 @@ export enum AppEvents {
   GALLERY_CREATE = 'gallery.create',
   GALLERY_UPDATE = 'gallery.update',
 
-  KANBAN_CREATE = 'kanban.create',
-  KANBAN_UPDATE = 'kanban.update',
-
   MAP_CREATE = 'map.create',
   MAP_UPDATE = 'map.update',
+  MAP_DELETE = 'map.delete',
+
+  KANBAN_CREATE = 'kanban.create',
+  KANBAN_UPDATE = 'kanban.update',
 
   META_DIFF_SYNC = 'meta.diff.sync',
 
@@ -113,11 +121,13 @@ export enum AppEvents {
   WEBHOOK_UPDATE = 'webhook.update',
   WEBHOOK_DELETE = 'webhook.delete',
   WEBHOOK_TEST = 'webhook.test',
+  WEBHOOK_TRIGGER = 'webhook.trigger',
 
   UI_ACL_UPDATE = 'ui.acl.update',
 
   ORG_API_TOKEN_CREATE = 'org.api.token.create',
   ORG_API_TOKEN_DELETE = 'org.api.token.delete',
+  ORG_API_TOKEN_UPDATE = 'org.api.token.update',
 
   PLUGIN_TEST = 'plugin.test',
   PLUGIN_INSTALL = 'plugin.install',
@@ -136,6 +146,62 @@ export enum AppEvents {
   ATTACHMENT_UPLOAD = 'attachment.upload',
 
   APIS_CREATED = 'apis.created',
+
+  EXTENSION_CREATE = 'extension.create',
+  EXTENSION_UPDATE = 'extension.update',
+  EXTENSION_DELETE = 'extension.delete',
+
+  COMMENT_CREATE = 'comment.create',
+  COMMENT_DELETE = 'comment.delete',
+  COMMENT_UPDATE = 'comment.update',
+  INTEGRATION_DELETE = 'integration.delete',
+  INTEGRATION_CREATE = 'integration.create',
+  INTEGRATION_UPDATE = 'integration.update',
+
+  ROW_USER_MENTION = 'row.user.mention',
+  CALENDAR_CREATE = 'calendar.create',
+  FORM_DUPLICATE = 'form.duplicate',
+  CALENDAR_UPDATE = 'calendar.update',
+  CALENDAR_DELETE = 'calendar.delete',
+  FORM_DELETE = 'form.delete',
+
+  SOURCE_CREATE = 'source.create',
+  SOURCE_UPDATE = 'source.update',
+  SOURCE_DELETE = 'source.delete',
+  SHARED_BASE_REVOKE_LINK = 'shared.base.revoke.link',
+  GRID_DELETE = 'grid.delete',
+  GRID_DUPLICATE = 'grid.duplicate',
+  KANBAN_DELETE = 'kanban.delete',
+  KANBAN_DUPLICATE = 'kanban.duplicate',
+  GALLERY_DELETE = 'gallery.delete',
+  GALLERY_DUPLICATE = 'gallery.duplicate',
+
+  BASE_DUPLICATE_START = 'base.duplicate.start',
+  BASE_DUPLICATE_COMPLETE = 'base.duplicate.complete',
+  BASE_DUPLICATE_FAIL = 'base.duplicate.fail',
+
+  TABLE_DUPLICATE_START = 'table.duplicate.start',
+  TABLE_DUPLICATE_COMPLETE = 'table.duplicate.complete',
+  TABLE_DUPLICATE_FAIL = 'table.duplicate.fail',
+
+  COLUMN_DUPLICATE_START = 'column.duplicate.start',
+  COLUMN_DUPLICATE_COMPLETE = 'column.duplicate.complete',
+  COLUMN_DUPLICATE_FAIL = 'column.duplicate.fail',
+
+  VIEW_DUPLICATE_START = 'view.duplicate.start',
+  VIEW_DUPLICATE_COMPLETE = 'view.duplicate.complete',
+  VIEW_DUPLICATE_FAIL = 'view.duplicate.fail',
+  USER_SIGNOUT = 'user.signout',
+  PROJECT_USER_DELETE = 'base.user.delete',
+  UI_ACL = 'model.role.ui.acl',
+
+  SNAPSHOT_CREATE = 'snapshot.create',
+  SNAPSHOT_DELETE = 'snapshot.delete',
+  SNAPSHOT_RESTORE = 'snapshot.restore',
+
+  DATA_EXPORT = 'data.export',
+  DATA_IMPORT = 'data.import',
+  USER_PROFILE_UPDATE = 'user.profile.update',
 }
 
 export enum ClickhouseTables {
@@ -167,6 +233,7 @@ export const RoleLabels = {
   [WorkspaceUserRoles.EDITOR]: 'editor',
   [WorkspaceUserRoles.COMMENTER]: 'commenter',
   [WorkspaceUserRoles.VIEWER]: 'viewer',
+  [WorkspaceUserRoles.NO_ACCESS]: 'noaccess',
   [ProjectRoles.OWNER]: 'owner',
   [ProjectRoles.CREATOR]: 'creator',
   [ProjectRoles.EDITOR]: 'editor',
@@ -176,6 +243,9 @@ export const RoleLabels = {
   [OrgUserRoles.SUPER_ADMIN]: 'superAdmin',
   [OrgUserRoles.CREATOR]: 'creator',
   [OrgUserRoles.VIEWER]: 'viewer',
+  [CloudOrgUserRoles.OWNER]: 'owner',
+  [CloudOrgUserRoles.CREATOR]: 'creator',
+  [CloudOrgUserRoles.VIEWER]: 'viewer',
 };
 
 export const RoleColors = {
@@ -184,6 +254,7 @@ export const RoleColors = {
   [WorkspaceUserRoles.EDITOR]: 'green',
   [WorkspaceUserRoles.COMMENTER]: 'orange',
   [WorkspaceUserRoles.VIEWER]: 'yellow',
+  [WorkspaceUserRoles.NO_ACCESS]: 'red',
   [ProjectRoles.OWNER]: 'purple',
   [ProjectRoles.CREATOR]: 'blue',
   [ProjectRoles.EDITOR]: 'green',
@@ -193,22 +264,30 @@ export const RoleColors = {
   [ProjectRoles.NO_ACCESS]: 'red',
   [OrgUserRoles.CREATOR]: 'blue',
   [OrgUserRoles.VIEWER]: 'yellow',
+  [CloudOrgUserRoles.OWNER]: 'purple',
+  [CloudOrgUserRoles.CREATOR]: 'blue',
+  [CloudOrgUserRoles.VIEWER]: 'yellow',
 };
 
 export const RoleDescriptions = {
   [WorkspaceUserRoles.OWNER]: 'Full access to workspace',
-  [WorkspaceUserRoles.CREATOR]: 'Can create bases, sync tables, views, setup web-hooks and more',
+  [WorkspaceUserRoles.CREATOR]:
+    'Can create bases, sync tables, views, setup web-hooks and more',
   [WorkspaceUserRoles.EDITOR]: 'Can edit data in workspace bases',
-  [WorkspaceUserRoles.COMMENTER]: 'Can view and comment data in workspace bases',
+  [WorkspaceUserRoles.COMMENTER]:
+    'Can view and comment data in workspace bases',
   [WorkspaceUserRoles.VIEWER]: 'Can view data in workspace bases',
+  [WorkspaceUserRoles.NO_ACCESS]: 'Cannot access this workspace',
   [ProjectRoles.OWNER]: 'Full access to base',
-  [ProjectRoles.CREATOR]: 'Can create tables, views, setup webhook, invite collaborators and more',
+  [ProjectRoles.CREATOR]:
+    'Can create tables, views, setup webhook, invite collaborators and more',
   [ProjectRoles.EDITOR]: 'Can view, add & modify records, add comments on them',
   [ProjectRoles.COMMENTER]: 'Can view records and add comment on them',
   [ProjectRoles.VIEWER]: 'Can only view records',
   [ProjectRoles.NO_ACCESS]: 'Cannot access this base',
   [OrgUserRoles.SUPER_ADMIN]: 'Full access to all',
-  [OrgUserRoles.CREATOR]: 'Can create bases, sync tables, views, setup web-hooks and more',
+  [OrgUserRoles.CREATOR]:
+    'Can create bases, sync tables, views, setup web-hooks and more',
   [OrgUserRoles.VIEWER]: 'Can only view bases',
 };
 
@@ -218,6 +297,7 @@ export const RoleIcons = {
   [WorkspaceUserRoles.EDITOR]: 'role_editor',
   [WorkspaceUserRoles.COMMENTER]: 'role_commenter',
   [WorkspaceUserRoles.VIEWER]: 'role_viewer',
+  [WorkspaceUserRoles.NO_ACCESS]: 'role_no_access',
   [ProjectRoles.OWNER]: 'role_owner',
   [ProjectRoles.CREATOR]: 'role_creator',
   [ProjectRoles.EDITOR]: 'role_editor',
@@ -227,6 +307,10 @@ export const RoleIcons = {
   [OrgUserRoles.SUPER_ADMIN]: 'role_super',
   [OrgUserRoles.CREATOR]: 'role_creator',
   [OrgUserRoles.VIEWER]: 'role_viewer',
+
+  [CloudOrgUserRoles.OWNER]: 'role_owner',
+  [CloudOrgUserRoles.CREATOR]: 'role_creator',
+  [CloudOrgUserRoles.VIEWER]: 'role_viewer',
 };
 
 export const WorkspaceRolesToProjectRoles = {
@@ -235,6 +319,7 @@ export const WorkspaceRolesToProjectRoles = {
   [WorkspaceUserRoles.EDITOR]: ProjectRoles.EDITOR,
   [WorkspaceUserRoles.COMMENTER]: ProjectRoles.COMMENTER,
   [WorkspaceUserRoles.VIEWER]: ProjectRoles.VIEWER,
+  [WorkspaceUserRoles.NO_ACCESS]: ProjectRoles.NO_ACCESS,
 };
 
 export const OrderedWorkspaceRoles = [
@@ -243,8 +328,13 @@ export const OrderedWorkspaceRoles = [
   WorkspaceUserRoles.EDITOR,
   WorkspaceUserRoles.COMMENTER,
   WorkspaceUserRoles.VIEWER,
-  // placeholder for no access
-  null,
+  WorkspaceUserRoles.NO_ACCESS,
+];
+
+export const OrderedOrgRoles = [
+  OrgUserRoles.SUPER_ADMIN,
+  OrgUserRoles.CREATOR,
+  OrgUserRoles.VIEWER,
 ];
 
 export const OrderedProjectRoles = [
@@ -280,4 +370,137 @@ export enum PlanLimitTypes {
   // PER VIEW
   FILTER_LIMIT = 'FILTER_LIMIT',
   SORT_LIMIT = 'SORT_LIMIT',
+}
+
+export enum APIContext {
+  VIEW_COLUMNS = 'fields',
+  FILTERS = 'filters',
+  SORTS = 'sorts',
+}
+
+export enum SourceRestriction {
+  SCHEMA_READONLY = 'is_schema_readonly',
+  DATA_READONLY = 'is_data_readonly',
+}
+
+export enum ClientType {
+  MYSQL = 'mysql2',
+  MSSQL = 'mssql',
+  PG = 'pg',
+  SQLITE = 'sqlite3',
+  VITESS = 'vitess',
+  SNOWFLAKE = 'snowflake',
+  DATABRICKS = 'databricks',
+}
+
+export enum SSLUsage {
+  No = 'No',
+  Allowed = 'Allowed',
+  Preferred = 'Preferred',
+  Required = 'Required',
+  RequiredWithCa = 'Required-CA',
+  RequiredWithIdentity = 'Required-Identity',
+}
+
+export enum SyncDataType {
+  // Database
+  NOCODB = 'nocodb',
+  MICROSOFT_ACCESS = 'microsoft-access',
+  TABLEAU = 'tableau',
+  ORACLE = 'oracle',
+  // AI
+  OPENAI = 'openai',
+  CLAUDE = 'claude',
+  OLLAMA = 'ollama',
+  GROQ = 'groq',
+  // Communication
+  SLACK = 'slack',
+  DISCORD = 'discord',
+  TWILLO = 'twillo',
+  MICROSOFT_OUTLOOK = 'microsoft-outlook',
+  MICROSOFT_TEAMS = 'microsoft-teams',
+  TELEGRAM = 'telegram',
+  GMAIL = 'gmail',
+  WHATSAPP = 'whatsapp',
+  // Project Management
+  ASANA = 'asana',
+  JIRA = 'jira',
+  MIRO = 'miro',
+  TRELLO = 'trello',
+  // CRM
+  SALESFORCE = 'salesforce',
+  PIPEDRIVE = 'pipedrive',
+  MICROSOFT_DYNAMICS_365 = 'microsoft-dynamics-365',
+  ZOHO_CRM = 'zoho-crm',
+  // Marketing
+  HUBSPOT = 'hubspot',
+  MAILCHIMP = 'mailchimp',
+  SURVEYMONKEY = 'surveymonkey',
+  TYPEFORM = 'typeform',
+  // ATS
+  WORKDAY = 'workday',
+  GREENHOUSE = 'greenhouse',
+  LEVER = 'lever',
+  // Development
+  GITHUB = 'github',
+  GITLAB = 'gitlab',
+  BITBUCKET = 'bitbucket',
+  // Finance
+  STRIPE = 'stripe',
+  QUICKBOOKS = 'quickbooks',
+  // Ticketing
+  FRESHDESK = 'freshdesk',
+  INTERCOM = 'intercom',
+  ZENDESK = 'zendesk',
+  HUBSPOT_SERVICE_HUB = 'hubspot-service-hub',
+  SALESFORCE_SERVICE_CLOUD = 'salesforce-service-cloud',
+  // Storage
+  BOX = 'box',
+  GOOGLE_DRIVE = 'google-drive',
+  DROPBOX = 'dropbox',
+  // Others
+  APPLE_NUMBERS = 'apple-numbers',
+  GOOGLE_CALENDAR = 'google-calendar',
+  MICROSOFT_EXCEL = 'microsoft-excel',
+  GOOGLE_SHEETS = 'google-sheets',
+}
+
+export enum IntegrationCategoryType {
+  DATABASE = 'database',
+  AI = 'ai',
+  COMMUNICATION = 'communication',
+  SPREAD_SHEET = 'spread-sheet',
+  PROJECT_MANAGEMENT = 'project-management',
+  CRM = 'crm',
+  MARKETING = 'marketing',
+  ATS = 'ats',
+  DEVELOPMENT = 'development',
+  FINANCE = 'finance',
+  TICKETING = 'ticketing',
+  STORAGE = 'storage',
+  OTHERS = 'others',
+}
+
+export enum ViewLockType {
+  Personal = 'personal',
+  Locked = 'locked',
+  Collaborative = 'collaborative',
+}
+
+export enum PublicAttachmentScope {
+  WORKSPACEPICS = 'workspacePics',
+  PROFILEPICS = 'profilePics',
+  ORGANIZATIONPICS = 'organizationPics',
+}
+
+export enum IconType {
+  IMAGE = 'IMAGE',
+  EMOJI = 'EMOJI',
+  ICON = 'ICON',
+}
+
+export enum NcApiVersion {
+  V1,
+  V2,
+  V3,
 }
